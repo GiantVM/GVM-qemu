@@ -74,6 +74,9 @@ static QemuMutex bql;
  */
 static const AccelOpsClass *cpus_accel;
 
+/* used in wait remote */
+int wait_remote_cpu_count = 0;
+
 bool cpu_is_stopped(CPUState *cpu)
 {
     return cpu->stopped || !runstate_is_running();
@@ -418,6 +421,10 @@ static QemuCond qemu_cpu_cond;
 /* system init */
 static QemuCond qemu_pause_cond;
 
+/* mutex and cond for remote cpu */
+static QemuCond qemu_remote_cpu_cond;
+static QemuMutex qemu_remote_mutex;
+
 void qemu_init_cpu_loop(void)
 {
     qemu_init_sigbus();
@@ -425,11 +432,19 @@ void qemu_init_cpu_loop(void)
     qemu_cond_init(&qemu_pause_cond);
     qemu_mutex_init(&bql);
 
+    qemu_cond_init(&qemu_remote_cpu_cond);
+    qemu_mutex_init(&qemu_remote_mutex);
+
     qemu_thread_get_self(&io_thread);
 }
 
 void run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data)
 {
+    if (!cpu->local) {
+        printf("run_on_cpu: not local CPU, ignore here. "
+				"This could be a latent bug.\n");
+        return;
+    }
     do_run_on_cpu(cpu, func, data, &bql);
 }
 
@@ -897,5 +912,46 @@ exit:
 void qmp_inject_nmi(Error **errp)
 {
     nmi_monitor_handle(monitor_get_cpu_index(monitor_cur()), errp);
+}
+
+/* for remote cpu */
+void qemu_cond_wait_remote(void)
+{
+    qemu_cond_wait(qemu_remote_cpu_cond, &qemu_remote_mutex);
+}
+
+void qemu_cond_signal_remote(void)
+{
+    qemu_cond_signal(qemu_remote_cpu_cond);
+}
+
+void qemu_cond_broadcast_remote(void)
+{
+    qemu_cond_broadcast(qemu_remote_cpu_cond);
+}
+
+void qemu_mutex_lock_remote(void)
+{
+    qemu_mutex_lock(qemu_remote_mutex);
+}
+
+void qemu_mutex_unlock_remote(void)
+{
+    qemu_mutex_unlock(qemu_remote_mutex);
+}
+
+void remote_cpu_count_dec(void)
+{
+    wait_remote_cpu_count--;
+}
+
+void wakeup_remote_cpu(void) {
+    qemu_cond_broadcast(&qemu_remote_cpu_cond);
+    MachineState *ms = MACHINE(qdev_get_machine());
+    wait_remote_cpu_count = ms->smp.cpus - ms->local_cpus;
+    while (wait_remote_cpu_count > 0) {
+        /* wait all remote cpu thread to change CPU status */
+        /* Need to do: use cond to improve */
+    }
 }
 

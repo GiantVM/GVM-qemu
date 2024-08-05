@@ -486,6 +486,9 @@ struct CPUState {
     bool stop;
     bool stopped;
 
+    /* 0:remote cpu 1:local cpu */
+    bool local;
+
     /* Should CPU start in powered-off state? */
     bool start_powered_off;
 

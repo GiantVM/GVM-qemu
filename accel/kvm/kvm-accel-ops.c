@@ -46,7 +46,9 @@ static void *kvm_vcpu_thread_fn(void *arg)
     cpu_thread_signal_created(cpu);
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
-    do {
+    /* deal with local/remote cpu */
+    if (cpu->local) {
+        do {
         if (cpu_can_run(cpu)) {
             r = kvm_cpu_exec(cpu);
             if (r == EXCP_DEBUG) {
@@ -54,7 +56,26 @@ static void *kvm_vcpu_thread_fn(void *arg)
             }
         }
         qemu_wait_io_event(cpu);
-    } while (!cpu->unplug || cpu_can_run(cpu));
+        } while (!cpu->unplug || cpu_can_run(cpu));
+    }
+    else {
+        printf("CPU %d is remote CPU, pause\n", cpu->cpu_index);
+        bql_unlock();
+        /* use a new lock since qemu_global_mutex may cause deadlock */
+        qemu_mutex_lock_remote();
+        while (1) {
+            qemu_cond_wait_remote();
+            remote_cpu_count_dec();
+            if (qemu_shutdown_requested_get()) {
+                cpu->stopped = true;
+                break;
+            }
+            if (qemu_reset_requested_get()) {
+                cpu->stopped = true;
+            }
+        }
+        qemu_mutex_unlock_remote();
+    }
 
     kvm_destroy_vcpu(cpu);
     cpu_thread_signal_destroyed(cpu);
