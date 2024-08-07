@@ -10,6 +10,40 @@ HXCOMM HXCOMM can be used for comments, discarded from both rST and C.
 
 DEFHEADING(Standard options:)
 
+HXCOMM add distributed QEMU option
+
+DEF("debug", 0, QEMU_OPTION_debug, 
+    "-debug     show debug log\n", QEMU_ARCH_ALL)
+SRST
+``-debug``
+    show debug log
+ERST
+
+DEF("local-cpu", HAS_ARG, QEMU_OPTION_local_cpu,
+    "-local-cpu [cpus=]n[,start=start][,iplist=\"ip1[ ip2]...\"]\n"
+    "                set the number of local CPUs to 'n' [default=1]\n"
+    "                start= the start index of local CPUs\n"
+    "                iplist= ip of each node hosting the distributed VM\n",
+        QEMU_ARCH_ALL)
+SRST
+``-local-cpu [cpus=]n[,start=start][,iplist=\"ip1[ ip2]...\"]``
+    Enable the distributed QEMU feature. CPUs are divided into two groups, local
+    and remote respectively. CPUs from @var{start} to (@var{start} + @var{n} - 1)
+    are local, while others are remote. @var{iplist} is the IP of each node of the
+    distributed VM. Currently, the local CPU number on each node must be the same,
+    otherwise the guest would not start.
+ERST
+
+
+DEF("shm-path", HAS_ARG, QEMU_OPTION_shm_path,
+    "-shm-path FILE  allocate memory from shm for guest RAM\n", QEMU_ARCH_ALL)
+SRST
+``-shm-path path``
+    Allocate guest RAM from share memory in @var{path}. This option is for running
+    multiple QEMU instances on a single machine. To use distributed shared memory,
+    just don't specify this option.
+ERST
+
 DEF("help", 0, QEMU_OPTION_h,
     "-h or -help     display this help and exit\n", QEMU_ARCH_ALL)
 SRST
