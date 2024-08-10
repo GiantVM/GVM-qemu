@@ -24,6 +24,8 @@
 #include "exec/translation-block.h"
 #include "exec/target_page.h"
 #include "system/runstate.h"
+#include "interrupt-router.h"
+
 #ifndef CONFIG_USER_ONLY
 #include "system/hw_accel.h"
 #include "system/memory.h"
@@ -597,12 +599,22 @@ void do_cpu_init(X86CPU *cpu)
     CPUState *cs = CPU(cpu);
     CPUX86State *env = &cpu->env;
     CPUX86State *save = g_new(CPUX86State, 1);
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->smp.cpus != ms->local_cpus) {
+        qemu_mutex_lock(&ipi_mutex);
+    }
+
     int sipi = cs->interrupt_request & CPU_INTERRUPT_SIPI;
 
     *save = *env;
 
     cpu_reset(cs);
     cs->interrupt_request = sipi;
+
+    if (ms->smp.cpus != ms->local_cpus) {
+        qemu_mutex_unlock(&ipi_mutex);
+    }   
+
     memcpy(&env->start_init_save, &save->start_init_save,
            offsetof(CPUX86State, end_init_save) -
            offsetof(CPUX86State, start_init_save));

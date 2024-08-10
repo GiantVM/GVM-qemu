@@ -31,6 +31,7 @@
 #include "hw/i386/apic-msidef.h"
 #include "qapi/error.h"
 #include "qom/object.h"
+#include "interrupt-router.h"
 
 #define SYNC_FROM_VAPIC                 0x1
 #define SYNC_TO_VAPIC                   0x2
@@ -638,7 +639,21 @@ static void apic_get_delivery_bitmask(uint32_t *deliver_bitmask,
 static void apic_startup(APICCommonState *s, int vector_num)
 {
     s->sipi_vector = vector_num;
-    cpu_interrupt(CPU(s->cpu), CPU_INTERRUPT_SIPI);
+
+    /* 
+     * Add lock to avoid race condition 
+     * For example, the SIPI bit in interrupt_request may be cleared by 
+     * the handler of INIT IPI(cpu_common_reset) 
+     */
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->local_cpus != ms->smp.cpus) {
+        qemu_mutex_lock(&ipi_mutex);
+        cpu_interrupt(CPU(s->cpu), CPU_INTERRUPT_SIPI);
+        qemu_mutex_unlock(&ipi_mutex);
+    }
+    else {
+        cpu_interrupt(CPU(s->cpu), CPU_INTERRUPT_SIPI);
+    }
 }
 
 void apic_sipi(DeviceState *dev)
