@@ -108,5 +108,11 @@ void hmp_info_local_apic(Monitor *mon, const QDict *qdict)
         monitor_printf(mon, "No CPU available\n");
         return;
     }
+
+    if (!cs->local) {
+        monitor_printf(mon, "CPU %d is not a local CPU\n",
+                       cs->cpu_index);
+        return;
+    }
     x86_cpu_dump_local_apic_state(cs, CPU_DUMP_FPU);
 }

@@ -444,14 +444,16 @@ struct MachineState {
     struct NVDIMMState *nvdimms_state;
     struct NumaState *numa_state;
     bool acpi_spcr_enabled;
-    
+
     /* distributed QEMU variables */
     const char* shm_path = NULL;
     int local_cpus = -1;
     int local_cpu_start_index = 0;
     int qemu_nums = 0;
     const char *cluster_iplist = NULL;
-    
+    bool main_qemu() {
+        return (local_cpus != smp.cpus && local_cpu_start_index == 0);
+    }
 };
 
 /*

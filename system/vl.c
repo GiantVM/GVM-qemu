@@ -142,6 +142,8 @@
 #include "qemu/guest-random.h"
 #include "qemu/keyval.h"
 
+#include "interrupt-router.h"
+
 #define MAX_VIRTIO_CONSOLES 1
 
 typedef struct BlockdevOptionsQueueEntry {
@@ -203,6 +205,12 @@ static bool auto_create_sdcard = true;
 static int default_vga = 1;
 static int default_net = 1;
 
+/* distributed QEMU variables */
+const char* shm_path = NULL;
+int local_cpus = -1;
+int local_cpu_start_index = 0;
+const char *cluster_iplist = NULL;
+
 static const struct {
     const char *driver;
     int *flag;
@@ -228,6 +236,30 @@ static const struct {
     { .driver = "virtio-vga-gl",        .flag = &default_vga       },
     { .driver = "virtio-vga-rutabaga",  .flag = &default_vga       },
 };
+
+/* add option local-cpu */
+static QemuOptsList qemu_local_cpu_opts = {
+    .name = "local-cpu",
+    .implied_opt_name = "cpus",
+    .merge_lists = true,
+    .head = QTAILQ_HEAD_INITIALIZER(qemu_local_cpu_opts.head),
+    .desc = {
+        {
+            .name = "cpus",
+            .type = QEMU_OPT_NUMBER,
+            .help = "number of local CPUs",
+        }, {
+            .name = "start",
+            .type = QEMU_OPT_NUMBER,
+            .help = "start index of local CPUs",
+        }, {
+            .name = "iplist",
+            .type = QEMU_OPT_STRING,
+            .help = "list of cluster node ip address (seperated by space)",
+        }
+        { /*end of list */ }
+    }
+}
 
 static QemuOptsList qemu_rtc_opts = {
     .name = "rtc",
@@ -2834,6 +2866,43 @@ void qmp_x_exit_preconfig(Error **errp)
     }
 }
 
+void qemu_init_distributd(MachineState *ms)
+{
+    ms->shm_path = shm_path;
+    if (local_cpus == -1) {
+        ms->local_cpus = local_cpus = ms->smp.cpus;
+    }
+    else {
+        ms->local_cpus = local_cpus;
+    }
+    ms->local_cpu_start_index = local_cpu_start_index;
+    ms->cluster_iplist = cluster_iplist;
+    ms->qemu_nums = (ms->smp.cpus + ms->local_cpus - 1) / local_cpus;
+
+     if (local_cpus > ms->smp_cpus) {
+        error_report("Number of local SMP CPUs requested (%d) exceeds "
+				"smp CPUs (%d) ",
+                local_cpus, ms->smp.cpus);
+        exit(1);
+    }
+    if (local_cpu_start_index + local_cpus > ms->smp_cpus) {
+        error_report("Last Index of local SMP CPUs requested (%d) exceeds "
+				"Last Index of smp CPUs (%d) ",
+                     local_cpu_start_index + local_cpus - 1, ms->smp.cpus - 1);
+        exit(1);
+    }
+    if (local_cpu_start_index % local_cpus != 0) {
+        error_report("Start Index of local SMP CPUs requested (%d) not aligned "
+				"with Local CPU Number requested (%d)",
+                     local_cpu_start_index, local_cpus);
+        exit(1);
+    }
+
+    printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", ms->qemu_nums, ms->smp.cpus, ms->local_cpus);
+
+    start_io_router();
+}
+
 void qemu_init(int argc, char **argv)
 {
     QemuOpts *opts;
@@ -2876,6 +2945,7 @@ void qemu_init(int argc, char **argv)
     qemu_add_opts(&qemu_semihosting_config_opts);
     qemu_add_opts(&qemu_fw_cfg_opts);
     qemu_add_opts(&qemu_action_opts);
+    qemu_add_opts(&qemu_local_cpu_opts);
     qemu_add_run_with_opts();
     module_call_init(MODULE_INIT_OPTS);
 
@@ -3674,6 +3744,26 @@ void qemu_init(int argc, char **argv)
             case QEMU_OPTION_nouserconfig:
                 /* Nothing to be parsed here. Especially, do not error out below. */
                 break;
+            case QEMU_OPTION_local_cpu:
+                opts = qemu_opts_parse_noisily(qemu_find_opts("local-cpu"),
+                                               optarg, false);
+                if (!opts) {
+                    exit(1);
+                }
+                local_cpus = qemu_opt_get_number(opts, "cpus", 1);
+                local_cpu_start_index = qemu_opt_get_number(opts, "start", 0);
+                cluster_iplist = qemu_opt_get(opts, "iplist");
+                if (parse_cluster_iplist(cluster_iplist)) {
+                    error_report("iplist parse failed");
+                    exit(1);
+                }
+                break;
+            case QEMU_OPTION_shm_path:
+                shm_path = optarg;
+                break;
+            case QEMU_OPTION_debug:
+                /* Need to do: debug */
+                break;
 #if defined(CONFIG_POSIX) && !defined(EMSCRIPTEN)
             case QEMU_OPTION_daemonize:
                 os_set_daemonize(true);
@@ -3835,6 +3925,8 @@ void qemu_init(int argc, char **argv)
         dump_vmstate_json_to_file(vmstate_dump_file);
         exit(0);
     }
+
+    qemu_init_distributd(current_machine);
 
     if (!preconfig_requested) {
         qmp_x_exit_preconfig(&error_fatal);
