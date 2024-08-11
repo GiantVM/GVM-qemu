@@ -16,3 +16,5 @@
 void kvmclock_create(bool create_always);
 
 #endif
+
+uint64_t kvmclock_getclock(void);

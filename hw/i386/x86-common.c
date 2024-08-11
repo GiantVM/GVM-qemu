@@ -427,6 +427,11 @@ void x86_cpu_pre_plug(HotplugHandler *hotplug_dev,
     cs = CPU(cpu);
     cs->cpu_index = idx;
 
+    /* remote CPU */
+    if (idx < ms->local_cpu_start_index || idx > ms->local_cpu_start_index + ms->local_cpus -1) {
+        cs->local = false;
+    }
+
     numa_cpu_pre_plug(cpu_slot, dev, errp);
 }
 

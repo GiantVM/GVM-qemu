@@ -25,6 +25,7 @@
 #include "hw/i386/kvm/clock.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
+#include "interrupt-router.h"
 
 #include <linux/kvm.h>
 #include "qom/object.h"
@@ -167,6 +168,7 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
     CPUState *cpu;
     int cap_clock_ctrl = kvm_check_extension(kvm_state, KVM_CAP_KVMCLOCK_CTRL);
     int ret;
+    uint64_t time_clock;
 
     if (running) {
         struct kvm_clock_data data = {};
@@ -186,6 +188,21 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
         s->clock_valid = false;
 
         data.clock = s->clock;
+
+        /* AP should get BSP kvmclock and apply it to its own kvmclock */
+        MachineState *ms = MACHINE(qdev_get_machine());
+        if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index != 0) {
+            struct timespec begin_ts, end_ts;
+            clock_gettime(CLOCK_MONOTONIC, &begin_ts);
+            kvmclock_fetching(&time_clock);
+            clock_gettime(CLOCK_MONOTONIC, &end_ts);
+            uint64_t rtt = (end_ts.tv_sec - begin_ts.tv_sec) * 1000000000 + end_ts.tv_nsec - begin_ts.tv_nsec;
+            printf("kvmclock sync RTT[%lu]\n", rtt);
+            time_clock += rtt / 2;
+            data.clock = time_clock;
+            printf("QEMU %d set kvmclock: %llu\n", ms->local_cpu_start_index, data.clock);
+        }
+
         ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, &data);
         if (ret < 0) {
             fprintf(stderr, "KVM_SET_CLOCK failed: %s\n", strerror(-ret));
@@ -216,6 +233,20 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
          */
         s->clock_valid = true;
     }
+}
+
+uint64_t kvmclock_getclock(void) {
+    struct kvm_clock_data data;
+    int ret;
+
+    /* kvm_synchronize_all_tsc(); */
+
+    ret = kvm_vm_ioctl(kvm_state, KVM_GET_CLOCK, &data);
+    if (ret < 0) {
+        fprintf(stderr, "KVM_GET_CLOCK failed: %s\n", strerror(ret));
+        abort();
+    }
+    return data.clock;
 }
 
 static void kvmclock_realize(DeviceState *dev, Error **errp)
