@@ -80,7 +80,7 @@ static inline void apic_reset_bit(uint32_t *tab, int index)
     int i, mask;
     i = index >> 5;
     mask = 1 << (index & 0x1f);
-    tab[i] &= ~mask;
+    qatomic_and(&(tab[i]), ~mask);
 }
 
 /* return -1 if no bit is set */
