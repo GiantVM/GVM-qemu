@@ -31,7 +31,9 @@
 #include "hw/i386/apic-msidef.h"
 #include "qapi/error.h"
 #include "qom/object.h"
+#include "target/i386/cpu.h"
 #include "interrupt-router.h"
+#include "qemu/atomic.h"
 
 #define SYNC_FROM_VAPIC                 0x1
 #define SYNC_TO_VAPIC                   0x2
@@ -50,6 +52,84 @@ static void apic_set_irq(APICCommonState *s, int vector_num, int trigger_mode);
 static void apic_update_irq(APICCommonState *s);
 static void apic_get_delivery_bitmask(uint32_t *deliver_bitmask,
                                       uint32_t dest, uint8_t dest_mode);
+
+static void cpu_interrupt_remote(CPUState *cpu, int mask)
+{
+    int cpu_index = cpu->cpu_index;
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->local_cpus != ms->smp.cpus && !ms->is_local_node(cpu_index)) {
+        special_interrupt_forwarding(cpu, mask);
+    }
+    else {
+        cpu_interrupt(cpu, mask);
+    }
+}
+
+static void apic_set_irq_remote(APICCommonState *s, int vector_num, int trigger_mode)
+{
+    int cpu_index = (CPU(s->cpu))->cpu_index;
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->local_cpus != ms->smp.cpus && !ms->is_local_node(cpu_index)) {
+        irq_forwarding(cpu_index, vector_num, trigger_mode);
+    }
+    else {
+        apic_set_irq(s, vector_num, trigger_mode);
+    }
+}
+
+static void apic_startup_remote(CPUState *cpu, int vector_num)
+{
+    int index = cpu->cpu_index;
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->local_cpus != ms->smp.cpus && !ms->is_local_node(index)) {
+        startup_forwarding(index, vector_num);
+    } else {
+        apic_startup(cpu, vector_num);
+    }
+}
+
+static void apic_init_level_deassert_remote(APICCommonState *s)
+{
+    int cpu_index = (CPU(s->cpu))->cpu_index;
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->local_cpus != ms->smp.cpus && !ms->is_local_node(cpu_index)) {
+        init_level_deassert_forwarding(index);
+    } else {
+        s->arb_id = s->id;
+    }
+}
+
+void apic_init_level_deassert(CPUState *cpu)
+{
+    APICCommonState *s = APIC(X86_CPU(cpu)->apic_state);
+    s->arb_id = s->id;
+}
+
+void apic_set_irq_detour(CPUState *cpu, int vector_num, int trigger_mode)
+{
+
+    APICCommonState *s = APIC(X86_CPU(cpu)->apic_state);
+    apic_set_irq(s, vector_num, trigger_mode);
+}
+
+void apic_lapic_write(CPUState *cpu, hwaddr addr, uint32_t val) {
+    APICCommonState *s = APIC(X86_CPU(cpu)->apic_state);
+    int index = (addr >> 4) & 0xff;
+
+    switch (index) {
+        case 0x02: /* APIC ID */
+            s->id = (val >> 24);
+            break;
+        case 0x0d: /* LDR */
+            s->log_dest = val >> 24;
+            break;
+        case 0x0e: /* DFR */
+            s->dest_mode = val >> 28;
+            break;
+        default:
+            break;
+    }
+}
 
 void apic_set_max_apic_id(uint32_t max_apic_id)
 {
@@ -247,7 +327,7 @@ static void apic_bus_deliver(const uint32_t *deliver_bitmask,
                 if (d >= 0) {
                     apic_iter = local_apics[d];
                     if (apic_iter) {
-                        apic_set_irq(apic_iter, vector_num, trigger_mode);
+                        apic_set_irq_remote(apic_iter, vector_num, trigger_mode);
                     }
                 }
             }
@@ -258,20 +338,20 @@ static void apic_bus_deliver(const uint32_t *deliver_bitmask,
 
         case APIC_DM_SMI:
             foreach_apic(apic_iter, deliver_bitmask,
-                cpu_interrupt(CPU(apic_iter->cpu), CPU_INTERRUPT_SMI)
+                cpu_interrupt_remote(CPU(apic_iter->cpu), CPU_INTERRUPT_SMI)
             );
             return;
 
         case APIC_DM_NMI:
             foreach_apic(apic_iter, deliver_bitmask,
-                cpu_interrupt(CPU(apic_iter->cpu), CPU_INTERRUPT_NMI)
+                cpu_interrupt_remote(CPU(apic_iter->cpu), CPU_INTERRUPT_NMI)
             );
             return;
 
         case APIC_DM_INIT:
             /* normal INIT IPI sent to processors */
             foreach_apic(apic_iter, deliver_bitmask,
-                         cpu_interrupt(CPU(apic_iter->cpu),
+                         cpu_interrupt_remote(CPU(apic_iter->cpu),
                                        CPU_INTERRUPT_INIT)
             );
             return;
@@ -285,7 +365,7 @@ static void apic_bus_deliver(const uint32_t *deliver_bitmask,
     }
 
     foreach_apic(apic_iter, deliver_bitmask,
-                 apic_set_irq(apic_iter, vector_num, trigger_mode) );
+                 apic_set_irq_remote(apic_iter, vector_num, trigger_mode) );
 }
 
 static void apic_deliver_irq(uint32_t dest, uint8_t dest_mode,
@@ -508,7 +588,13 @@ static void apic_eoi(APICCommonState *s)
         return;
     apic_reset_bit(s->isr, isrv);
     if (!(s->spurious_vec & APIC_SV_DIRECTED_IO) && apic_get_bit(s->tmr, isrv)) {
-        ioapic_eoi_broadcast(isrv);
+        MachineState *ms = MACHINE(qdev_get_machine());
+        if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index != 0) {
+            eoi_forwarding(isrv);
+        }
+        else {
+            ioapic_eoi_broadcast(isrv);
+        }
     }
     apic_sync_vapic(s, SYNC_FROM_VAPIC | SYNC_TO_VAPIC);
     apic_update_irq(s);
@@ -636,8 +722,9 @@ static void apic_get_delivery_bitmask(uint32_t *deliver_bitmask,
     }
 }
 
-static void apic_startup(APICCommonState *s, int vector_num)
+void apic_startup(CPUState *cpu, int vector_num)
 {
+    APICCommonState *s = APIC(X86_CPU(cpu)->apic_state);
     s->sipi_vector = vector_num;
 
     /* 
@@ -706,7 +793,7 @@ static void apic_deliver(DeviceState *dev, uint32_t dest, uint8_t dest_mode,
                 int level = (s->icr[0] >> 14) & 1;
                 if (level == 0 && trig_mode == 1) {
                     foreach_apic(apic_iter, deliver_bitmask,
-                                 apic_iter->arb_id = apic_iter->id );
+                                 apic_init_level_deassert_remote(apic_iter));
                     return;
                 }
             }
@@ -714,7 +801,7 @@ static void apic_deliver(DeviceState *dev, uint32_t dest, uint8_t dest_mode,
 
         case APIC_DM_SIPI:
             foreach_apic(apic_iter, deliver_bitmask,
-                         apic_startup(apic_iter, vector_num) );
+                         apic_startup_remote(CPU(apic_iter->cpu), vector_num) );
             return;
     }
 
@@ -945,7 +1032,19 @@ static void apic_send_msi(MSIMessage *msi)
     uint8_t trigger_mode = (data >> MSI_DATA_TRIGGER_SHIFT) & 0x1;
     uint8_t delivery = (data >> MSI_DATA_DELIVERY_MODE_SHIFT) & 0x7;
     /* XXX: Ignore redirection hint. */
-    apic_deliver_irq(dest, dest_mode, delivery, vector, trigger_mode);
+    if (vector < 16) {
+        DeviceState *dev = cpu_get_current_apic();
+        printf("error: msi send vector in range 0-15\n");
+        if (dev) {
+            APIC(dev)->esr |= APIC_ESR_RECV_ACCEPT;
+            apic_local_deliver(APIC(dev), APIC_LVT_ERROR);
+        } else {
+            printf("error: cannot find current apic\n");
+        }
+    }
+    else {
+        apic_deliver_irq(dest, dest_mode, delivery, vector, trigger_mode);
+    }
 }
 
 static int apic_register_write(int index, uint64_t val)
@@ -1103,6 +1202,24 @@ static void apic_mem_write(void *opaque, hwaddr addr, uint64_t val,
         apic_send_msi(&msi);
         return;
     }
+
+    /* keep sync of some LAPIC states */
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->local_cpus != ms->smp.cpus) {
+        if (current_cpu == NULL) {
+            printf("fatal: unknown lapic modification\n");
+            abort();
+        }
+        switch (index) {
+            /* Only APIC ID, LDR and DFR are used to derive destination APICs
+             * for a multicast/broadcast, no more registers need to be synced */
+            case 0x02: /* APIC ID */
+            case 0x0d: /* LDR */
+            case 0x0e: /* DFR */
+                lapic_forwarding(current_cpu->cpu_index, addr, val);
+                break;
+        }
+    }   
 
     apic_register_write(index, val);
 }

@@ -451,8 +451,13 @@ struct MachineState {
     int local_cpu_start_index = 0;
     int qemu_nums = 0;
     const char *cluster_iplist = NULL;
+
+    /* distributed QEMU functions */
     bool main_qemu() {
         return (local_cpus != smp.cpus && local_cpu_start_index == 0);
+    }
+    bool is_local_node(int index) {
+        return (index >= local_cpu_start_index && index < local_cpu_start_index + local_cpus);
     }
 };
 

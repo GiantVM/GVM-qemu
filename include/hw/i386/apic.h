@@ -22,6 +22,12 @@ int apic_msr_read(int index, uint64_t *val);
 int apic_msr_write(int index, uint64_t val);
 bool is_x2apic_mode(DeviceState *d);
 
+/* handle remote interrupt */
+void apic_init_level_deassert(CPUState *cpu);
+void apic_lapic_write(CPUState *cpu, hwaddr addr, uint32_t val);
+void apic_set_irq_detour(CPUState *cpu, int vector_num, int trigger_mode);
+void apic_startup(CPUState *cpu, int vector_num);
+
 /* pc.c */
 DeviceState *cpu_get_current_apic(void);
 
