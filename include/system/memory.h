@@ -1414,6 +1414,15 @@ bool memory_region_init_ram_flags_nomigrate(MemoryRegion *mr,
                                             uint64_t size,
                                             uint32_t ram_flags,
                                             Error **errp);
+                                    
+bool memory_region_init_shram_flags_nomigrate(MemoryRegion *mr,
+                                            Object *owner,
+                                            const char *name,
+                                            uint64_t size,
+                                            uint32_t ram_flags,
+                                            const char *path,
+                                            Error **errp);
+
 
 /**
  * memory_region_init_resizeable_ram:  Initialize memory region with resizable

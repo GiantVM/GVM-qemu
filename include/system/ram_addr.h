@@ -147,6 +147,9 @@ int qemu_ram_resize(RAMBlock *block, ram_addr_t newsize, Error **errp);
 
 void qemu_ram_msync(RAMBlock *block, ram_addr_t start, ram_addr_t length);
 
+RAMBlock *qemu_ram_alloc_shmem(ram_addr_t size, uint32_t ram_flags, MemoryRegion *mr,
+                               const char *shm_path, Error **errp);
+
 /* Clear whole block of mem */
 static inline void qemu_ram_block_writeback(RAMBlock *block)
 {

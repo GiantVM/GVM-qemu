@@ -2277,6 +2277,31 @@ RAMBlock *qemu_ram_alloc(ram_addr_t size, uint32_t ram_flags,
     return qemu_ram_alloc_internal(size, size, NULL, NULL, ram_flags, mr, errp);
 }
 
+RAMBlock *qemu_ram_alloc_shmem(ram_addr_t size, uint32_t ram_flags, 
+                               MemoryRegion *mr, const char *shm_path,
+                               Error **errp)
+{
+    int fd = shm_open(shm_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (fd == -1) {
+        goto err;
+    }
+    if (ftruncate(fd, size) == -1) {
+        shm_unlink(shm_path);
+        goto err;
+    }
+    void *host = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (host == MAP_FAILED) {
+        shm_unlink(shm_path);
+        goto err;
+    }
+    /* size_t align = QEMU_VMALLOC_ALIGN; */
+    return qemu_ram_alloc_from_ptr(size, host, mr, errp);
+
+err:
+    error_setg_errno(errp, errno, "cannot set up shared memory");
+    return NULL;
+}
+
 RAMBlock *qemu_ram_alloc_resizeable(ram_addr_t size, ram_addr_t maxsz,
                                     qemu_ram_resize_cb resized,
                                     MemoryRegion *mr, Error **errp)

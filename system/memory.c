@@ -1603,6 +1603,29 @@ bool memory_region_init_ram_flags_nomigrate(MemoryRegion *mr,
     return true;
 }
 
+bool memory_region_init_shram_flags_nomigrate(MemoryRegion *mr,
+                                            Object *owner,
+                                            const char *name,
+                                            uint64_t size,
+                                            uint32_t ram_flags,
+                                            const char *path,
+                                            Error **errp)
+{
+    Error *err = NULL;
+    memory_region_init(mr, owner, name, size);
+    mr->ram = true;
+    mr->terminates = true;
+    mr->destructor = memory_region_destructor_ram;
+    mr->ram_block = qemu_ram_alloc_shmem(size, ram_flags, mr, path, &err);
+    if (err) {
+        mr->size = int128_zero();
+        object_unparent(OBJECT(mr));
+        error_propagate(errp, err);
+        return false;
+    }
+    return true;
+}
+
 bool memory_region_init_resizeable_ram(MemoryRegion *mr,
                                        Object *owner,
                                        const char *name,

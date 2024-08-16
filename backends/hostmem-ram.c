@@ -31,9 +31,19 @@ ram_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
     ram_flags = backend->share ? RAM_SHARED : RAM_PRIVATE;
     ram_flags |= backend->reserve ? 0 : RAM_NORESERVE;
     ram_flags |= backend->guest_memfd ? RAM_GUEST_MEMFD : 0;
-    return memory_region_init_ram_flags_nomigrate(&backend->mr, OBJECT(backend),
-                                                  name, backend->size,
-                                                  ram_flags, errp);
+
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->shm_path) {
+        return memory_region_init_shram_flags_nomigrate(&backend->mr, OBJECT(backend),
+                                              name, backend->size,
+                                              ram_flags, ms->shm_path, 
+                                              errp);
+    }
+    else {
+        return memory_region_init_ram_flags_nomigrate(&backend->mr, OBJECT(backend),
+                                              name, backend->size,
+                                              ram_flags, errp);
+    }
 }
 
 static void
