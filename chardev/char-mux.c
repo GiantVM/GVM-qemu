@@ -32,6 +32,8 @@
 #include "qapi/qapi-commands-control.h"
 #include "chardev-internal.h"
 #include "interrupt-router.h"
+#include "qom/object_interfaces.h"
+#include "hw/boards.h"
 
 /* MUX driver for serial I/O splitting */
 

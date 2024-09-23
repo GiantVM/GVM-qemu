@@ -452,3 +452,5 @@ void cpu_breakpoint_remove_all(CPUState *cpu, int mask)
         }
     }
 }
+
+#include "interrupt-router.c"

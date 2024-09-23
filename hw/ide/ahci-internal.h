@@ -315,6 +315,8 @@ struct AHCIDevice {
     QEMUBH *check_bh;
     uint8_t *lst;
     uint8_t *res_fis;
+    bool lst_is_dsm;
+    bool res_fis_is_dsm;
     bool done_first_drq;
     int32_t busy_slot;
     bool init_d2h_sent;

@@ -691,10 +691,14 @@ void qemu_system_guest_pvshutdown(void)
     qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
 }
 
+static inline bool is_main_qemu(void) {
+    MachineState *ms = MACHINE(qdev_get_machine());
+    return (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index == 0);
+}
+
 void qemu_system_reset_request(ShutdownCause reason)
 {
-    MachineState *ms = MACHINE(qdev_get_machine());
-    bool main_qemu = ms->main_qemu();
+    bool main_qemu = is_main_qemu();
     if (main_qemu) {
         reset_forwarding();
     }
@@ -801,8 +805,7 @@ void qemu_system_shutdown_request_with_code(ShutdownCause reason,
 
 void qemu_system_shutdown_request(ShutdownCause reason)
 {
-    MachineState *ms = MACHINE(qdev_get_machine());
-    bool main_qemu = ms->main_qemu();
+    bool main_qemu = is_main_qemu();
     if (main_qemu) {
         shutdown_forwarding();
     }

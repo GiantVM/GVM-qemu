@@ -446,19 +446,11 @@ struct MachineState {
     bool acpi_spcr_enabled;
 
     /* distributed QEMU variables */
-    const char* shm_path = NULL;
-    int local_cpus = -1;
-    int local_cpu_start_index = 0;
-    int qemu_nums = 0;
-    const char *cluster_iplist = NULL;
-
-    /* distributed QEMU functions */
-    bool main_qemu() {
-        return (local_cpus != smp.cpus && local_cpu_start_index == 0);
-    }
-    bool is_local_node(int index) {
-        return (index >= local_cpu_start_index && index < local_cpu_start_index + local_cpus);
-    }
+    const char* shm_path;
+    int local_cpus;
+    int local_cpu_start_index;
+    int qemu_nums;
+    const char *cluster_iplist;
 };
 
 /*

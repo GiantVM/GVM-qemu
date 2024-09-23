@@ -34,6 +34,9 @@ ram_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
 
     MachineState *ms = MACHINE(qdev_get_machine());
     if (ms->shm_path) {
+        fprintf(stdout, "Use distributed shared memory mode.\n");
+        fflush(stdout);
+        ram_flags |= RAM_SHARED;
         return memory_region_init_shram_flags_nomigrate(&backend->mr, OBJECT(backend),
                                               name, backend->size,
                                               ram_flags, ms->shm_path, 

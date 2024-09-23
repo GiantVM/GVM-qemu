@@ -917,27 +917,27 @@ void qmp_inject_nmi(Error **errp)
 /* for remote cpu */
 void qemu_cond_wait_remote(void)
 {
-    qemu_cond_wait(qemu_remote_cpu_cond, &qemu_remote_mutex);
+    qemu_cond_wait(&qemu_remote_cpu_cond, &qemu_remote_mutex);
 }
 
 void qemu_cond_signal_remote(void)
 {
-    qemu_cond_signal(qemu_remote_cpu_cond);
+    qemu_cond_signal(&qemu_remote_cpu_cond);
 }
 
 void qemu_cond_broadcast_remote(void)
 {
-    qemu_cond_broadcast(qemu_remote_cpu_cond);
+    qemu_cond_broadcast(&qemu_remote_cpu_cond);
 }
 
 void qemu_mutex_lock_remote(void)
 {
-    qemu_mutex_lock(qemu_remote_mutex);
+    qemu_mutex_lock(&qemu_remote_mutex);
 }
 
 void qemu_mutex_unlock_remote(void)
 {
-    qemu_mutex_unlock(qemu_remote_mutex);
+    qemu_mutex_unlock(&qemu_remote_mutex);
 }
 
 void remote_cpu_count_dec(void)

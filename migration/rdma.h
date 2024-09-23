@@ -35,6 +35,12 @@ void rdma_start_incoming_migration(InetSocketAddress *host_port, Error **errp);
 
 #define RAM_SAVE_CONTROL_DELAYED  -2000
 
+struct router_address {
+    char host[20];
+    char port[10];
+    int target;
+};
+
 #ifdef CONFIG_RDMA
 int rdma_registration_handle(QEMUFile *f);
 int rdma_registration_start(QEMUFile *f, uint64_t flags);
@@ -42,6 +48,9 @@ int rdma_registration_stop(QEMUFile *f, uint64_t flags);
 int rdma_block_notification_handle(QEMUFile *f, const char *name);
 int rdma_control_save_page(QEMUFile *f, ram_addr_t block_offset,
                            ram_addr_t offset, size_t size);
+
+QEMUFile * qemu_rdma_build_outcoming_file(struct router_address *addr);
+QEMUFile * qemu_rdma_build_incoming_file(struct router_address *addr);
 #else
 static inline
 int rdma_registration_handle(QEMUFile *f) { return 0; }

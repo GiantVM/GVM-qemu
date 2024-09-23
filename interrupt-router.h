@@ -4,6 +4,7 @@
 #include "qemu/thread.h"
 #include "exec/memattrs.h"
 #include "io/channel-socket.h"
+#include "exec/hwaddr.h"
 
 extern QemuMutex ipi_mutex;
 extern int pr_debug_log;

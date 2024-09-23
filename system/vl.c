@@ -2868,6 +2868,12 @@ void qmp_x_exit_preconfig(Error **errp)
 
 void qemu_init_distributd(MachineState *ms)
 {
+    ms->shm_path = NULL;
+    ms->local_cpus = -1;
+    ms->local_cpu_start_index = 0;
+    ms->qeum_nums = 0;
+    ms->cluster_iplist = NULL;
+    
     ms->shm_path = shm_path;
     if (local_cpus == -1) {
         ms->local_cpus = local_cpus = ms->smp.cpus;

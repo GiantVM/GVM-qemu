@@ -53,11 +53,16 @@ static void apic_update_irq(APICCommonState *s);
 static void apic_get_delivery_bitmask(uint32_t *deliver_bitmask,
                                       uint32_t dest, uint8_t dest_mode);
 
+static inline is_local_node(int index) {
+    MachineState *ms = MACHINE(qdev_get_machine());
+    return (index >= ms->local_cpu_start_index && index < ms->local_cpu_start_index + ms->local_cpus);
+}
+
 static void cpu_interrupt_remote(CPUState *cpu, int mask)
 {
     int cpu_index = cpu->cpu_index;
     MachineState *ms = MACHINE(qdev_get_machine());
-    if (ms->local_cpus != ms->smp.cpus && !ms->is_local_node(cpu_index)) {
+    if (ms->local_cpus != ms->smp.cpus && !is_local_node(cpu_index)) {
         special_interrupt_forwarding(cpu, mask);
     }
     else {
@@ -69,7 +74,7 @@ static void apic_set_irq_remote(APICCommonState *s, int vector_num, int trigger_
 {
     int cpu_index = (CPU(s->cpu))->cpu_index;
     MachineState *ms = MACHINE(qdev_get_machine());
-    if (ms->local_cpus != ms->smp.cpus && !ms->is_local_node(cpu_index)) {
+    if (ms->local_cpus != ms->smp.cpus && !is_local_node(cpu_index)) {
         irq_forwarding(cpu_index, vector_num, trigger_mode);
     }
     else {
@@ -81,7 +86,7 @@ static void apic_startup_remote(CPUState *cpu, int vector_num)
 {
     int index = cpu->cpu_index;
     MachineState *ms = MACHINE(qdev_get_machine());
-    if (ms->local_cpus != ms->smp.cpus && !ms->is_local_node(index)) {
+    if (ms->local_cpus != ms->smp.cpus && !is_local_node(index)) {
         startup_forwarding(index, vector_num);
     } else {
         apic_startup(cpu, vector_num);
@@ -92,7 +97,7 @@ static void apic_init_level_deassert_remote(APICCommonState *s)
 {
     int cpu_index = (CPU(s->cpu))->cpu_index;
     MachineState *ms = MACHINE(qdev_get_machine());
-    if (ms->local_cpus != ms->smp.cpus && !ms->is_local_node(cpu_index)) {
+    if (ms->local_cpus != ms->smp.cpus && !is_local_node(cpu_index)) {
         init_level_deassert_forwarding(index);
     } else {
         s->arb_id = s->id;
