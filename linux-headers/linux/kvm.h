@@ -952,6 +952,7 @@ struct kvm_enable_cap {
 #define KVM_CAP_ARM_EL2 240
 #define KVM_CAP_ARM_EL2_E2H0 241
 #define KVM_CAP_RISCV_MP_STATE_RESET 242
+#define KVM_CAP_X86_DSM 243
 
 struct kvm_irq_routing_irqchip {
 	__u32 irqchip;
@@ -1289,6 +1290,33 @@ struct kvm_vfio_spapr_tce {
 #define KVM_SET_DEVICE_ATTR	  _IOW(KVMIO,  0xe1, struct kvm_device_attr)
 #define KVM_GET_DEVICE_ATTR	  _IOW(KVMIO,  0xe2, struct kvm_device_attr)
 #define KVM_HAS_DEVICE_ATTR	  _IOW(KVMIO,  0xe3, struct kvm_device_attr)
+
+/* dsm */
+struct kvm_dsm_params {
+	__u32 dsm_index;
+	__u32 cluster_iplist_len;
+	void *cluster_iplist;
+};
+#define KVM_DSM_ENABLE            _IOW(KVMIO,  0xf0, struct kvm_dsm_params)
+
+/* DSM memcpy in qemu should be redirected to KVM to keep DSM page privilege consistent. */
+struct kvm_dsm_memcpy {
+	bool write;
+	__u64 host_virt_addr;
+	__u64 userspace_addr;
+	__u64 length;
+};
+#define KVM_DSM_MEMCPY            _IOW(KVMIO,  0xf1, struct kvm_dsm_memcpy)
+
+/* DSM memory mapping in qemu should result in pinning the mapped pages in KVM DSM */
+struct kvm_dsm_mempin {
+	bool write;
+	bool unpin;
+	__u64 host_virt_addr;
+	__u64 length;
+};
+#define KVM_DSM_MEMPIN            _IOW(KVMIO,  0xf2, struct kvm_dsm_mempin)
+
 
 /*
  * ioctls for vcpu fds

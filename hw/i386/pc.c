@@ -1005,6 +1005,21 @@ void pc_memory_init(PCMachineState *pcms,
 
     /* Init ACPI memory hotplug IO base address */
     pcms->memhp_io_base = ACPI_MEMORY_HOTPLUG_BASE;
+
+    /* use mlock to improve  performance */
+    if (machine->local_cpus != machine->smp.cpus) {
+        if (machine->ram->ram) {
+            mlock(machine->ram->ram_block->host, machine->ram->ram_block->max_length);
+        }
+        else {
+            MemoryRegion *ram_subregion;
+            QTAILQ_FOREACH(ram_subregion, &machine->ram->subregions, subregions_link) {
+                if (ram_subregion->ram) {
+                    mlock(ram_subregion->ram_block->host, ram_subregion->ram_block->max_length);
+                }
+            }
+        }
+    }
 }
 
 /*

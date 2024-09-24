@@ -53,6 +53,9 @@
 
 #include "hw/boards.h"
 #include "system/stats.h"
+#include "hw/core/cpu.h"
+#include "interrupt-router.h"
+#include "apic_internal.h"
 
 /* This check must be after config-host.h is included */
 #ifdef CONFIG_EVENTFD
@@ -2843,6 +2846,10 @@ static void kvm_handle_io(uint16_t port, MemTxAttrs attrs, void *data, int direc
     int i;
     uint8_t *ptr = data;
 
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->local_cpus != ms->smp.cpus) {
+        
+    }
     for (i = 0; i < count; i++) {
         address_space_rw(&address_space_io, port, attrs,
                          ptr, size,
