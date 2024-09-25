@@ -214,18 +214,18 @@ static void ahci_trigger_irq(AHCIState *s, AHCIDevice *d,
 }
 
 static void map_page(AddressSpace *as, uint8_t **ptr, uint64_t addr,
-                     uint32_t wanted)
+                     uint32_t wanted, bool *is_dsm)
 {
     hwaddr len = wanted;
 
     if (*ptr) {
-        dma_memory_unmap(as, *ptr, len, DMA_DIRECTION_FROM_DEVICE, len);
+        dma_memory_unmap_internal(as, *ptr, len, DMA_DIRECTION_FROM_DEVICE, len, false);
     }
 
-    *ptr = dma_memory_map(as, addr, &len, DMA_DIRECTION_FROM_DEVICE,
-                          MEMTXATTRS_UNSPECIFIED);
+    *ptr = dma_memory_map_internal(as, addr, &len, DMA_DIRECTION_FROM_DEVICE,
+                          MEMTXATTRS_UNSPECIFIED, false, is_dsm);
     if (len < wanted && *ptr) {
-        dma_memory_unmap(as, *ptr, len, DMA_DIRECTION_FROM_DEVICE, len);
+        dma_memory_unmap_internal(as, *ptr, len, DMA_DIRECTION_FROM_DEVICE, len, false);
         *ptr = NULL;
     }
 }
@@ -703,7 +703,7 @@ static bool ahci_map_fis_address(AHCIDevice *ad)
 {
     AHCIPortRegs *pr = &ad->port_regs;
     map_page(ad->hba->as, &ad->res_fis,
-             ((uint64_t)pr->fis_addr_hi << 32) | pr->fis_addr, 256);
+             ((uint64_t)pr->fis_addr_hi << 32) | pr->fis_addr, 256, &ad->res_fis_is_dsm);
     if (ad->res_fis != NULL) {
         pr->cmd |= PORT_CMD_FIS_ON;
         return true;
@@ -720,8 +720,8 @@ static void ahci_unmap_fis_address(AHCIDevice *ad)
         return;
     }
     ad->port_regs.cmd &= ~PORT_CMD_FIS_ON;
-    dma_memory_unmap(ad->hba->as, ad->res_fis, 256,
-                     DMA_DIRECTION_FROM_DEVICE, 256);
+    dma_memory_unmap_internal(ad->hba->as, ad->res_fis, 256,
+                     DMA_DIRECTION_FROM_DEVICE, 256, false);
     ad->res_fis = NULL;
 }
 
@@ -730,7 +730,7 @@ static bool ahci_map_clb_address(AHCIDevice *ad)
     AHCIPortRegs *pr = &ad->port_regs;
     ad->cur_cmd = NULL;
     map_page(ad->hba->as, &ad->lst,
-             ((uint64_t)pr->lst_addr_hi << 32) | pr->lst_addr, 1024);
+             ((uint64_t)pr->lst_addr_hi << 32) | pr->lst_addr, 1024, &ad->res_fis_is_dsm);
     if (ad->lst != NULL) {
         pr->cmd |= PORT_CMD_LIST_ON;
         return true;
@@ -747,8 +747,8 @@ static void ahci_unmap_clb_address(AHCIDevice *ad)
         return;
     }
     ad->port_regs.cmd &= ~PORT_CMD_LIST_ON;
-    dma_memory_unmap(ad->hba->as, ad->lst, 1024,
-                     DMA_DIRECTION_FROM_DEVICE, 1024);
+    dma_memory_unmap_internal(ad->hba->as, ad->lst, 1024,
+                     DMA_DIRECTION_FROM_DEVICE, 1024, false);
     ad->lst = NULL;
 }
 
@@ -759,9 +759,24 @@ static void ahci_write_fis_sdb(AHCIState *s, NCQTransferState *ncq_tfs)
     IDEState *ide_state;
     SDBFIS *sdb_fis;
 
+    int ret;
+    struct kvm_dsm_mempin pin = {
+        .write = true,
+        .unpin = false,
+        .host_virt_addr = (__u64)ad->res_fis,
+        .length = 256,
+    };
+
     if (!ad->res_fis ||
         !(pr->cmd & PORT_CMD_FIS_RX)) {
         return;
+    }
+
+    if (ad->res_fis_is_dsm) {
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
     }
 
     sdb_fis = (SDBFIS *)&ad->res_fis[RES_FIS_SDBFIS];
@@ -792,6 +807,14 @@ static void ahci_write_fis_sdb(AHCIState *s, NCQTransferState *ncq_tfs)
     } else if (sdb_fis->flags & 0x40) {
         ahci_trigger_irq(s, ad, AHCI_PORT_IRQ_BIT_SDBS);
     }
+
+    if (ad->res_fis_is_dsm) {
+        pin.unpin = true;
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
+    }
 }
 
 static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
@@ -800,8 +823,23 @@ static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
     uint8_t *pio_fis;
     IDEState *s = &ad->port.ifs[0];
 
+    int ret;
+    struct kvm_dsm_mempin pin = {
+        .write = true,
+        .unpin = false,
+        .host_virt_addr = (__u64)ad->res_fis,
+        .length = 256,
+    };
+
     if (!ad->res_fis || !(pr->cmd & PORT_CMD_FIS_RX)) {
         return;
+    }
+
+    if (ad->res_fis_is_dsm) {
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
     }
 
     pio_fis = &ad->res_fis[RES_FIS_PSFIS];
@@ -835,6 +873,14 @@ static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
     if (pio_fis[2] & ERR_STAT) {
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_TFES);
     }
+
+    if (ad->res_fis_is_dsm) {
+        pin.unpin = true;
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
+    }
 }
 
 static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
@@ -844,8 +890,23 @@ static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
     int i;
     IDEState *s = &ad->port.ifs[0];
 
+    int ret;
+    struct kvm_dsm_mempin pin = {
+        .write = true,
+        .unpin = false,
+        .host_virt_addr = (__u64)ad->res_fis,
+        .length = 256,
+    };
+
     if (!ad->res_fis || !(pr->cmd & PORT_CMD_FIS_RX)) {
         return false;
+    }
+
+    if (ad->res_fis_is_dsm) {
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
     }
 
     d2h_fis = &ad->res_fis[RES_FIS_RFIS];
@@ -878,6 +939,14 @@ static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_TFES);
     } else if (d2h_fis_i) {
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_DHRS);
+    }
+
+    if (ad->res_fis_is_dsm) {
+        pin.unpin = true;
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
     }
 
     return true;
@@ -1316,6 +1385,9 @@ static void handle_cmd(AHCIState *s, int port, uint8_t slot)
     uint8_t *cmd_fis;
     dma_addr_t cmd_len;
 
+    int ret;
+    struct kvm_dsm_mempin pin;
+
     if (s->dev[port].port.ifs[0].status & (BUSY_STAT|DRQ_STAT)) {
         /* Engine currently busy, try again later */
         trace_handle_cmd_busy(s, port);
@@ -1337,13 +1409,24 @@ static void handle_cmd(AHCIState *s, int port, uint8_t slot)
         return;
     }
 
+    if (s->dev[port].lst_is_dsm) {
+        pin.write = true;
+        pin.unpin = false;
+        pin.host_virt_addr = (__u64)cmd;
+        pin.length = 32;
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        }
+    }
+
     tbl_addr = le64_to_cpu(cmd->tbl_addr);
     cmd_len = 0x80;
     cmd_fis = dma_memory_map(s->as, tbl_addr, &cmd_len,
                              DMA_DIRECTION_TO_DEVICE, MEMTXATTRS_UNSPECIFIED);
     if (!cmd_fis) {
         trace_handle_cmd_badfis(s, port);
-        return;
+        goto done;
     } else if (cmd_len != 0x80) {
         ahci_trigger_irq(s, &s->dev[port], AHCI_PORT_IRQ_BIT_HBFS);
         trace_handle_cmd_badmap(s, port, cmd_len);
@@ -1367,6 +1450,16 @@ static void handle_cmd(AHCIState *s, int port, uint8_t slot)
 out:
     dma_memory_unmap(s->as, cmd_fis, cmd_len, DMA_DIRECTION_TO_DEVICE,
                      cmd_len);
+
+done:
+    if (s->dev[port].lst_is_dsm) {
+        pin.unpin = true;
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        }
+    }
+    return;
 }
 
 /* Transfer PIO data between RAM and device */
@@ -1381,6 +1474,21 @@ static void ahci_pio_transfer(const IDEDMA *dma)
     int is_atapi = opts & AHCI_CMD_ATAPI;
     int has_sglist = 0;
     bool pio_fis_i;
+
+    int ret;
+    struct kvm_dsm_mempin pin = {
+        .write = true,
+        .unpin = false,
+        .host_virt_addr = (__u64)ad->cur_cmd,
+        .length = 32,
+    };
+
+    if (ad->lst_is_dsm) {
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
+    }
 
     /* The PIO Setup FIS is received prior to transfer, but the interrupt
      * is only triggered after data is received.
@@ -1429,6 +1537,14 @@ out:
     if (pio_fis_i) {
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_PSS);
     }
+
+    if (ad->lst_is_dsm) {
+        pin.unpin = true;
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
+    }
 }
 
 static void ahci_start_dma(const IDEDMA *dma, IDEState *s,
@@ -1471,15 +1587,41 @@ static int32_t ahci_dma_prepare_buf(const IDEDMA *dma, int32_t limit)
     AHCIDevice *ad = DO_UPCAST(AHCIDevice, dma, dma);
     IDEState *s = &ad->port.ifs[0];
 
+    int ret, r;
+    struct kvm_dsm_mempin pin = {
+        .write = true,
+        .unpin = false,
+        .host_virt_addr = (__u64)ad->cur_cmd,
+        .length = 32,
+    };
+
+    if (ad->lst_is_dsm) {
+        r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (r < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        }
+    }
+
     if (ahci_populate_sglist(ad, &s->sg, ad->cur_cmd,
                              limit, s->io_buffer_offset) == -1) {
         trace_ahci_dma_prepare_buf_fail(ad->hba, ad->port_no);
-        return -1;
+        ret = -1;
+        goto done;
     }
     s->io_buffer_size = s->sg.size;
 
     trace_ahci_dma_prepare_buf(ad->hba, ad->port_no, limit, s->io_buffer_size);
-    return s->io_buffer_size;
+
+    ret = s->io_buffer_size;
+done:
+    if (ad->lst_is_dsm) {
+        pin.unpin = true;
+        r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (r < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        }
+    }
+    return ret;
 }
 
 /**
@@ -1491,8 +1633,31 @@ static void ahci_commit_buf(const IDEDMA *dma, uint32_t tx_bytes)
 {
     AHCIDevice *ad = DO_UPCAST(AHCIDevice, dma, dma);
 
+    int ret;
+    struct kvm_dsm_mempin pin = {
+        .write = true,
+        .unpin = false,
+        .host_virt_addr = (__u64)ad->cur_cmd,
+        .length = 32,
+    };
+
+    if (ad->lst_is_dsm) {
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
+    }
+
     tx_bytes += le32_to_cpu(ad->cur_cmd->status);
     ad->cur_cmd->status = cpu_to_le32(tx_bytes);
+
+    if (ad->lst_is_dsm) {
+        pin.unpin = true;
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
+    }
 }
 
 static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
@@ -1502,8 +1667,24 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
     uint8_t *p = s->io_buffer + s->io_buffer_index;
     int l = s->io_buffer_size - s->io_buffer_index;
 
+    int ret, r;
+    struct kvm_dsm_mempin pin = {
+        .write = true,
+        .unpin = false,
+        .host_virt_addr = (__u64)ad->cur_cmd,
+        .length = 32,
+    };
+
+    if (ad->lst_is_dsm) {
+        r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (r < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        }
+    }
+
     if (ahci_populate_sglist(ad, &s->sg, ad->cur_cmd, l, s->io_buffer_offset)) {
-        return 0;
+        ret = 0;
+        goto done;
     }
 
     if (is_write) {
@@ -1517,7 +1698,17 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
     s->io_buffer_index += l;
 
     trace_ahci_dma_rw_buf(ad->hba, ad->port_no, l);
-    return 1;
+
+    ret = 1;
+done:
+    if (ad->lst_is_dsm) {
+        pin.unpin = true;
+        r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (r < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        }
+    }
+    return ret;
 }
 
 static void ahci_clear_cmd_issue(AHCIDevice *ad, uint8_t slot)
@@ -1707,6 +1898,12 @@ static int ahci_state_post_load(void *opaque, int version_id)
     AHCIPortRegs *pr;
     AHCIState *s = opaque;
 
+    int ret;
+    struct kvm_dsm_mempin pin = {
+        .write = true,
+        .length = 32,
+    };
+
     for (i = 0; i < s->ports; i++) {
         ad = &s->dev[i];
         pr = &ad->port_regs;
@@ -1751,10 +1948,25 @@ static int ahci_state_post_load(void *opaque, int version_id)
             if (!ncq_tfs->cmdh) {
                 return -1;
             }
+            if (ad->lst_is_dsm) {
+                pin.host_virt_addr = (__u64)ncq_tfs->cmdh;
+                pin.unpin = false;
+                ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+                if (ret < 0) {
+                    fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+                }
+            }
             ahci_populate_sglist(ncq_tfs->drive, &ncq_tfs->sglist,
                                  ncq_tfs->cmdh,
                                  ncq_tfs->sector_count * BDRV_SECTOR_SIZE,
                                  0);
+            if (ad->lst_is_dsm) {
+                pin.unpin = true;
+                ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+                if (ret < 0) {
+                    fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+                }
+            }
             if (ncq_tfs->sector_count != ncq_tfs->sglist.size >> 9) {
                 return -1;
             }
