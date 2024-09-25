@@ -108,8 +108,7 @@ int pr_debug(const char *format, ...)
     int done;
 
     va_start(arg, format);
-    //Need to do:free
-    // done = vfprintf(stdout, format, arg);
+    done = vfprintf(stdout, format, arg);
     va_end(arg);
     return done;
 }
@@ -451,50 +450,44 @@ static int get_router_address(int target, struct router_address *addr)
     if (target < 0 || target > ROUTER_MAX_INDEX) {
         return -EINVAL;
     }
-    // Need to do:free
-    // memcpy(addr->host, router_hosts[target], strlen(router_hosts[target]));
-    // sprintf(addr->port, "%d", ROUTER_DEFAULT_PORT + target);
-    // addr->target = target;
+    memcpy(addr->host, router_hosts[target], strlen(router_hosts[target]));
+    sprintf(addr->port, "%d", ROUTER_DEFAULT_PORT + target);
+    addr->target = target;
     return 0;
 }
 #endif
 
-// static gboolean io_router_accept_connection(QIOChannel *ioc,
-                                                //  GIOCondition condition,
-                                                //  gpointer opaque)
-// {
-    // QIOChannelSocket *sioc;
-    // QIOChannel *channel;
-    // Error *err = NULL;
-// 
-    // sioc = qio_channel_socket_accept(QIO_CHANNEL_SOCKET(ioc),
-                                    //  &err);
-    // if (!sioc) {
-        // error_report("could not accept io router connection (%s)",
-                    //  error_get_pretty(err));
-        // exit(1);
-    // }
-// 
-    // Need to do:free
-    // channel = QIO_CHANNEL(sioc);
-    // qio_channel_set_name(channel, "io-router-connection-channel");
-
-    // QemuThread *thread = g_malloc0(sizeof(QemuThread));
-    // struct io_router_loop_arg *arg = (struct io_router_loop_arg *)g_malloc0(sizeof(struct io_router_loop_arg));
-    // memset(arg, 0, sizeof(struct io_router_loop_arg));
-    // arg->req_file = qemu_fopen_channel_input(channel);
-    // arg->rsp_file = qemu_file_get_return_path(arg->req_file);
-    // arg->channel = channel;
-
-    // qemu_thread_create(thread, "io-router-connection", io_router_loop,
-            //    arg, QEMU_THREAD_JOINABLE);
-// 
-    // return true;
-// }
-
-static void temp(void)
+static gboolean io_router_accept_connection(QIOChannel *ioc,
+                                                 GIOCondition condition,
+                                                 gpointer opaque)
 {
-    io_router_loop(NULL);
+    QIOChannelSocket *sioc;
+    QIOChannel *channel;
+    Error *err = NULL;
+
+    sioc = qio_channel_socket_accept(QIO_CHANNEL_SOCKET(ioc),
+                                     &err);
+    if (!sioc) {
+        error_report("could not accept io router connection (%s)",
+                     error_get_pretty(err));
+        exit(1);
+    }
+
+    
+    channel = QIO_CHANNEL(sioc);
+    qio_channel_set_name(channel, "io-router-connection-channel");
+
+    QemuThread *thread = g_malloc0(sizeof(QemuThread));
+    struct io_router_loop_arg *arg = (struct io_router_loop_arg *)g_malloc0(sizeof(struct io_router_loop_arg));
+    memset(arg, 0, sizeof(struct io_router_loop_arg));
+    arg->req_file = qemu_fopen_channel_input(channel);
+    arg->rsp_file = qemu_file_get_return_path(arg->req_file);
+    arg->channel = channel;
+
+    qemu_thread_create(thread, "io-router-connection", io_router_loop,
+               arg, QEMU_THREAD_JOINABLE);
+
+    return true;
 }
 
 static void connect_io_router_single(int index)
@@ -516,24 +509,21 @@ static void connect_io_router_single(int index)
 
 #ifdef ROUTER_CONNECTION_TCP
     int ret;
-    //Need to do:free
-    // struct router_address addr;
-    // memset(&addr, 0, sizeof(addr));
-// 
-    // ret = get_router_address(index, &addr);
-    ret = get_router_address(index, NULL);
+    struct router_address addr;
+    memset(&addr, 0, sizeof(addr));
+
+    ret = get_router_address(index, &addr);
     if (ret) {
         printf("get_router_address failed, ret: %d\n", ret);
         return;
     }
     connect_addr->type = SOCKET_ADDRESS_TYPE_INET;
-    // Need to do:free
-    // connect_addr->u.inet.data = g_new(InetSocketAddress, 1);
-    // *connect_addr->u.inet.data = (InetSocketAddress) {
-        // .host = g_strdup(addr.host),
-        // .port = g_strdup(addr.port), /* NULL == Auto-select */
-    // };
-    // printf("connecting %s:%s\n", addr.host, addr.port);
+    connect_addr->u.inet.data = g_new(InetSocketAddress, 1);
+    *connect_addr->u.inet.data = (InetSocketAddress) {
+        .host = g_strdup(addr.host),
+        .port = g_strdup(addr.port), /* NULL == Auto-select */
+    };
+    printf("connecting %s:%s\n", addr.host, addr.port);
 #endif
 
     channel = QIO_CHANNEL(qio_channel_socket_new());
@@ -551,76 +541,74 @@ static void connect_io_router_single(int index)
     }
 
     qio_channel_set_delay(channel, false);
-    // Need to do:free
-    // req_files[index] = qemu_fopen_channel_output(channel);
-    // rsp_files[index] = qemu_file_get_return_path(req_files[index]);
+    req_files[index] = qemu_fopen_channel_output(channel);
+    rsp_files[index] = qemu_file_get_return_path(req_files[index]);
     printf("connecting io router done\n");
 }
 #endif /* ROUTER_CONNECTION_RDMA */
 
 static void *qemu_io_router_thread_run(void *arg)
 {
-    //Need to do:free
-    // IORouter *router = arg;
-    // router->thread_id = qemu_get_thread_id();
-// 
-// #ifdef ROUTER_CONNECTION_RDMA
-    // qemu_io_router_thread_run_rdma();
-// #else
-    // int ret;
-    // SocketAddress *listen_addr;
-    // QIOChannelSocket *lioc;
-    // Error *local_err = NULL;
-    // listen_addr = g_new0(SocketAddress, 1);
-    // int index = local_cpu_start_index / local_cpus;
-// 
-// #ifdef ROUTER_CONNECTION_UNIX_SOCKET
-    // char sockpath[30];
-    // sprintf(sockpath, "%s-%d", ROUTER_SOCKET_PREFIX, index);
-// 
-    // listen_addr->type = SOCKET_ADDRESS_KIND_UNIX;
-    // listen_addr->u.q_unix.data = g_new0(UnixSocketAddress, 1);
-    // listen_addr->u.q_unix.data->path = g_strdup(sockpath);
-// 
-    // printf("QEMU %d listen on Unix socket %s\n", index, sockpath);
-// #endif
-// 
-// #ifdef ROUTER_CONNECTION_TCP
-    // struct router_address addr;
-    // memset(&addr, 0, sizeof(addr));
-// 
-    // ret = get_router_address(index, &addr);
-    // if (ret) {
-        // printf("get_router_address failed, ret: %d\n", ret);
-        // return NULL;
-    // }
-    // listen_addr->type = SOCKET_ADDRESS_TYPE_INET;
-    // listen_addr->u.inet.data = g_new(InetSocketAddress, 1);
-    // *listen_addr->u.inet.data = (InetSocketAddress) {
-        // .host = g_strdup(addr.host),
-        // .port = g_strdup(addr.port), /* NULL == Auto-select */
-    // };
-    // printf("QEMU %d listen on TCP socket %s:%s\n", index, addr.host, addr.port);
-// #endif
-// 
-    // lioc = qio_channel_socket_new();
-    // qio_channel_set_name(QIO_CHANNEL(lioc), "io-router-listener-channel");
-// 
-    // if (qio_channel_socket_listen_sync(lioc, listen_addr, &local_err) < 0) {
-        // printf("io-router listen error, exit...");
-        // object_unref(OBJECT(lioc));
-        // qapi_free_SocketAddress(listen_addr);
-        // exit(1);
-    // }
-// 
-    // qio_channel_add_watch(QIO_CHANNEL(lioc),
-                        //   G_IO_IN,
-                        //   io_router_accept_connection,
-                        //   lioc,
-                        //   (GDestroyNotify)object_unref);
-// 
-    // qapi_free_SocketAddress(listen_addr);
-// #endif
+    IORouter *router = arg;
+    router->thread_id = qemu_get_thread_id();
+
+#ifdef ROUTER_CONNECTION_RDMA
+    qemu_io_router_thread_run_rdma();
+#else
+    int ret;
+    SocketAddress *listen_addr;
+    QIOChannelSocket *lioc;
+    Error *local_err = NULL;
+    listen_addr = g_new0(SocketAddress, 1);
+    int index = local_cpu_start_index / local_cpus;
+
+#ifdef ROUTER_CONNECTION_UNIX_SOCKET
+    char sockpath[30];
+    sprintf(sockpath, "%s-%d", ROUTER_SOCKET_PREFIX, index);
+
+    listen_addr->type = SOCKET_ADDRESS_KIND_UNIX;
+    listen_addr->u.q_unix.data = g_new0(UnixSocketAddress, 1);
+    listen_addr->u.q_unix.data->path = g_strdup(sockpath);
+
+    printf("QEMU %d listen on Unix socket %s\n", index, sockpath);
+#endif
+
+#ifdef ROUTER_CONNECTION_TCP
+    struct router_address addr;
+    memset(&addr, 0, sizeof(addr));
+
+    ret = get_router_address(index, &addr);
+    if (ret) {
+        printf("get_router_address failed, ret: %d\n", ret);
+        return NULL;
+    }
+    listen_addr->type = SOCKET_ADDRESS_TYPE_INET;
+    listen_addr->u.inet.data = g_new(InetSocketAddress, 1);
+    *listen_addr->u.inet.data = (InetSocketAddress) {
+        .host = g_strdup(addr.host),
+        .port = g_strdup(addr.port), /* NULL == Auto-select */
+    };
+    printf("QEMU %d listen on TCP socket %s:%s\n", index, addr.host, addr.port);
+#endif
+
+    lioc = qio_channel_socket_new();
+    qio_channel_set_name(QIO_CHANNEL(lioc), "io-router-listener-channel");
+
+    if (qio_channel_socket_listen_sync(lioc, listen_addr, &local_err) < 0) {
+        printf("io-router listen error, exit...");
+        object_unref(OBJECT(lioc));
+        qapi_free_SocketAddress(listen_addr);
+        exit(1);
+    }
+
+    qio_channel_add_watch(QIO_CHANNEL(lioc),
+                          G_IO_IN,
+                          io_router_accept_connection,
+                          lioc,
+                          (GDestroyNotify)object_unref);
+
+    qapi_free_SocketAddress(listen_addr);
+#endif
     return NULL;
 }
 
@@ -672,7 +660,6 @@ void disconnect_io_router(void)
 
 void start_io_router(void)
 {
-    temp();
     IORouter router;
     router.thread_id = -1;
     int size;
