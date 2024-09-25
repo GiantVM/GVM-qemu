@@ -2414,7 +2414,7 @@ static bool sev_build_kernel_loader_hashes(SevCommonState *sev_common,
      * area for the SEV hashes table
      */
     padded_ht = address_space_map(&address_space_memory, area->base,
-                                  &mapped_len, true, attrs);
+                                  &mapped_len, true, attrs, true, NULL);
     if (!padded_ht || mapped_len != sizeof(*padded_ht)) {
         error_setg(errp, "SEV: cannot map hashes table guest memory area");
         return false;
@@ -2430,7 +2430,7 @@ static bool sev_build_kernel_loader_hashes(SevCommonState *sev_common,
     }
 
     address_space_unmap(&address_space_memory, padded_ht,
-                        mapped_len, true, mapped_len);
+                        mapped_len, true, mapped_len, true);
 
     return ret;
 }

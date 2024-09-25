@@ -3060,7 +3060,7 @@ bool address_space_access_valid(AddressSpace *as, hwaddr addr, hwaddr len,
  * @attrs: memory attributes
  */
 void *address_space_map(AddressSpace *as, hwaddr addr,
-                        hwaddr *plen, bool is_write, MemTxAttrs attrs);
+                        hwaddr *plen, bool is_write, MemTxAttrs attrsm, bool dsm_pin, bool *is_dsm);
 
 /* address_space_unmap: Unmaps a memory region previously mapped by address_space_map()
  *
@@ -3074,7 +3074,7 @@ void *address_space_map(AddressSpace *as, hwaddr addr,
  * @is_write: indicates the transfer direction
  */
 void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
-                         bool is_write, hwaddr access_len);
+                         bool is_write, hwaddr access_len, bool dsm_unpin);
 
 /*
  * address_space_register_map_client: Register a callback to invoke when
@@ -3149,6 +3149,9 @@ static inline bool memory_access_is_direct(MemoryRegion *mr, bool is_write,
     return true;
 }
 
+#include "sysemu/kvm.h"
+#include "sysemu/sysemu.h"
+
 /**
  * address_space_read: read from an address space.
  *
@@ -3172,6 +3175,7 @@ MemTxResult address_space_read(AddressSpace *as, hwaddr addr,
     void *ptr;
     MemoryRegion *mr;
     FlatView *fv;
+    MachineState *ms = MACHINE(qdev_get_machine());
 
     if (__builtin_constant_p(len)) {
         if (len) {
@@ -3179,7 +3183,8 @@ MemTxResult address_space_read(AddressSpace *as, hwaddr addr,
             fv = address_space_to_flatview(as);
             l = len;
             mr = flatview_translate(fv, addr, &addr1, &l, false, attrs);
-            if (len == l && memory_access_is_direct(mr, false, attrs)) {
+            if (len == l && memory_access_is_direct(mr, false, attrs) &&
+                (!kvm_enabled() || ms->local_cpus == ms->smp.cpus || ms->shm_path != NULL)) {
                 ptr = qemu_map_ram_ptr(mr->ram_block, addr1);
                 memcpy(buf, ptr, len);
             } else {

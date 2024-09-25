@@ -836,11 +836,30 @@ void pc_memory_init(PCMachineState *pcms,
     hwaddr maxphysaddr, maxusedaddr;
     hwaddr cxl_base, cxl_resv_end = 0;
     X86CPU *cpu = X86_CPU(first_cpu);
+    struct kvm_dsm_params params;
 
     assert(machine->ram_size == x86ms->below_4g_mem_size +
                                 x86ms->above_4g_mem_size);
 
     linux_boot = (machine->kernel_filename != NULL);
+
+    /* Start DSM */
+    if (machine->local_cpus != machine->smp.cpus && !machine->shm_path) {
+        if (kvm_enabled() && kvm_check_extension(kvm_state, KVM_CAP_X86_DSM)) {
+            params.dsm_index = machine->local_cpu_start_index / machine->local_cpus;
+            params.cluster_iplist = (void *) get_cluster_iplist(&params.cluster_iplist_len);
+            int ret = kvm_vm_ioctl(kvm_state, KVM_DSM_ENABLE, &params);
+            if (ret < 0) {
+                error_report("Enable kernel DSM failed: %s", strerror(-ret));
+                exit(EXIT_FAILURE);
+            }
+            printf("start kvm dsm server, total memory size: %lu\n",
+                    machine->ram_size);
+        } else {
+            error_report("Could not start distributed QEMU: DSM not supported.");
+            exit(EXIT_FAILURE);
+        }
+    }
 
     /*
      * The HyperTransport range close to the 1T boundary is unique to AMD

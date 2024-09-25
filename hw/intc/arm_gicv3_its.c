@@ -1284,10 +1284,10 @@ static void process_cmdq(GICv3ITSState *s)
 
         buflen = GITS_CMDQ_ENTRY_SIZE;
         hostmem = address_space_map(as, s->cq.base_addr + cq_offset,
-                                    &buflen, false, MEMTXATTRS_UNSPECIFIED);
+                                    &buflen, false, MEMTXATTRS_UNSPECIFIED, true, NULL);
         if (!hostmem || buflen != GITS_CMDQ_ENTRY_SIZE) {
             if (hostmem) {
-                address_space_unmap(as, hostmem, buflen, false, 0);
+                address_space_unmap(as, hostmem, buflen, false, 0, true);
             }
             s->creadr = FIELD_DP64(s->creadr, GITS_CREADR, STALLED, 1);
             qemu_log_mask(LOG_GUEST_ERROR,
@@ -1298,7 +1298,7 @@ static void process_cmdq(GICv3ITSState *s)
         for (i = 0; i < ARRAY_SIZE(cmdpkt); i++) {
             cmdpkt[i] = ldq_le_p(hostmem + i * sizeof(uint64_t));
         }
-        address_space_unmap(as, hostmem, buflen, false, 0);
+        address_space_unmap(as, hostmem, buflen, false, 0, true);
 
         cmd = cmdpkt[0] & CMD_MASK;
 

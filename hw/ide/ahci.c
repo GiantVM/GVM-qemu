@@ -35,6 +35,8 @@
 
 #include "trace.h"
 
+#include "sysemu/kvm.h"
+
 static void check_cmd(AHCIState *s, int port);
 static void handle_cmd(AHCIState *s, int port, uint8_t slot);
 static void ahci_reset_port(AHCIState *s, int port);

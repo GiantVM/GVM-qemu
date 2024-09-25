@@ -1399,13 +1399,13 @@ static target_ulong h_int_set_queue_config(PowerPCCPU *cpu,
          * has been zeroed by the OS.
          */
         eq = address_space_map(CPU(cpu)->as, qpage, &plen, true,
-                               MEMTXATTRS_UNSPECIFIED);
+                               MEMTXATTRS_UNSPECIFIED, true, NULL);
         if (plen != 1 << qsize) {
             qemu_log_mask(LOG_GUEST_ERROR, "XIVE: failed to map EQ @0x%"
                           HWADDR_PRIx "\n", qpage);
             return H_P4;
         }
-        address_space_unmap(CPU(cpu)->as, eq, plen, true, plen);
+        address_space_unmap(CPU(cpu)->as, eq, plen, true, plen, true);
     }
 
     /* "target" should have been validated above */

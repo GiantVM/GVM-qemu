@@ -2996,10 +2996,26 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
         return result;
     } else {
         /* RAM case */
+        int ret;
         uint8_t *ram_ptr = qemu_ram_ptr_length(mr->ram_block, mr_addr, l,
                                                false, true);
 
-        memmove(ram_ptr, buf, *l);
+        MachineState *ms = MACHINE(qemu_get_machine());
+        if (kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
+                struct kvm_dsm_memcpy cpy = {
+                    .write = true,
+                    .host_virt_addr = (__u64)ptr,
+                    .userspace_addr = (__u64)buf,
+                    .length = *l,
+                };
+                ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMCPY, &cpy);
+                if (ret < 0) {
+                    fprintf(stderr, "KVM_DSM_MEMCPY failed %d\n", ret);
+                }
+            }
+            else {
+                memmove(ram_ptr, buf, *l);
+            }
         invalidate_and_set_dirty(mr, mr_addr, *l);
 
         return MEMTX_OK;
@@ -3092,7 +3108,22 @@ static MemTxResult flatview_read_continue_step(MemTxAttrs attrs, uint8_t *buf,
         uint8_t *ram_ptr = qemu_ram_ptr_length(mr->ram_block, mr_addr, l,
                                                false, false);
 
-        memcpy(buf, ram_ptr, *l);
+        MachineState *ms = MACHINE(qemu_get_machine());                                       
+        if (kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
+                struct kvm_dsm_memcpy cpy = {
+                    .write = false,
+                    .host_virt_addr = (__u64)ptr,
+                    .userspace_addr = (__u64)buf,
+                    .length = *l,
+                };
+                ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMCPY, &cpy);
+                if (ret < 0) {
+                    fprintf(stderr, "KVM_DSM_MEMCPY failed %d\n", ret);
+                }
+            }
+            else {
+                memcpy(buf, ram_ptr, *l);
+            }
 
         return MEMTX_OK;
     }
@@ -3432,14 +3463,22 @@ void *address_space_map(AddressSpace *as,
                         hwaddr addr,
                         hwaddr *plen,
                         bool is_write,
-                        MemTxAttrs attrs)
+                        MemTxAttrs attrs,
+                        bool dsm_pin,
+                        bool *is_dsm)
 {
     hwaddr len = *plen;
     hwaddr l, xlat;
     MemoryRegion *mr;
     FlatView *fv;
+    void *ptr;
+    MachineState *ms = MACHINE(qdev_get_machine());
 
     trace_address_space_map(as, addr, len, is_write, *(uint32_t *) &attrs);
+
+    if (*is_dsm) {
+        *is_dsm  = false;
+    }
 
     if (len == 0) {
         return NULL;
@@ -3489,7 +3528,26 @@ void *address_space_map(AddressSpace *as,
     *plen = flatview_extend_translation(fv, addr, len, mr, xlat,
                                         l, is_write, attrs);
     fuzz_dma_read_cb(addr, *plen, mr);
-    return qemu_ram_ptr_length(mr->ram_block, xlat, plen, true, is_write);
+    ptr = qemu_ram_ptr_length(mr->ram_block, xlat, plen, true, is_write);
+
+    if (is_dsm && kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path)
+        *is_dsm = true;
+
+    if (kvm_enabled() && dsm_pin && ms->local_cpus != ms->smp_cpus && !ms->shm_path) {
+        int ret;
+        struct kvm_dsm_mempin pin = {
+            .write = is_write,
+            .unpin = false,
+            .host_virt_addr = (__u64)ptr,
+            .length = *plen,
+        };
+        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+        if (ret < 0) {
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        }
+    }
+
+    return ptr
 }
 
 /* Unmaps a memory region previously mapped by address_space_map().
@@ -3497,10 +3555,12 @@ void *address_space_map(AddressSpace *as,
  * the amount of memory that was actually read or written by the caller.
  */
 void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
-                         bool is_write, hwaddr access_len)
+                         bool is_write, hwaddr access_len, bool dsm_unpin)
 {
     MemoryRegion *mr;
     ram_addr_t addr1;
+    /* GiantVM changes */
+    MachineState *ms = MACHINE(qdev_get_machine());
 
     mr = memory_region_from_host(buffer, &addr1);
     if (mr != NULL) {
@@ -3509,6 +3569,19 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
         }
         if (xen_enabled()) {
             xen_invalidate_map_cache_entry(buffer);
+        }
+        if (kvm_enabled() && dsm_unpin && ms->local_cpus != ms->smp_cpus && !ms->shm_path) {
+            int ret;
+            struct kvm_dsm_mempin pin = {
+                .write = is_write,
+                .unpin = true,
+                .host_virt_addr = (__u64)buffer,
+                .length = access_len,
+            };
+            ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+            if (ret < 0) {
+                fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+            }
         }
         memory_region_unref(mr);
         return;
@@ -3537,13 +3610,13 @@ void *cpu_physical_memory_map(hwaddr addr,
                               bool is_write)
 {
     return address_space_map(&address_space_memory, addr, plen, is_write,
-                             MEMTXATTRS_UNSPECIFIED);
+                             MEMTXATTRS_UNSPECIFIED, true, NULL);
 }
 
 void cpu_physical_memory_unmap(void *buffer, hwaddr len,
                                bool is_write, hwaddr access_len)
 {
-    return address_space_unmap(&address_space_memory, buffer, len, is_write, access_len);
+    return address_space_unmap(&address_space_memory, buffer, len, is_write, access_len, true);
 }
 
 #define ARG1_DECL                AddressSpace *as

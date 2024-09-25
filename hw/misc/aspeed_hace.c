@@ -277,7 +277,7 @@ static int hash_prepare_sg_iov(AspeedHACEState *s, struct iovec *iov,
          */
         plen = len & SG_LIST_LEN_MASK;
         haddr = address_space_map(&s->dram_as, sg_addr, &plen, false,
-                                  MEMTXATTRS_UNSPECIFIED);
+                                  MEMTXATTRS_UNSPECIFIED, true, NULL);
 
         if (haddr == NULL) {
             qemu_log_mask(LOG_GUEST_ERROR,

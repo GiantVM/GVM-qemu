@@ -567,7 +567,7 @@ const ppc_hash_pte64_t *ppc_hash64_map_hptes(PowerPCCPU *cpu,
     }
 
     hptes = address_space_map(CPU(cpu)->as, base + pte_offset, &plen, false,
-                              MEMTXATTRS_UNSPECIFIED);
+                              MEMTXATTRS_UNSPECIFIED, true, NULL);
     if (plen < (n * HASH_PTE_SIZE_64)) {
         hw_error("%s: Unable to map all requested HPTEs\n", __func__);
     }
@@ -583,7 +583,7 @@ void ppc_hash64_unmap_hptes(PowerPCCPU *cpu, const ppc_hash_pte64_t *hptes,
     }
 
     address_space_unmap(CPU(cpu)->as, (void *)hptes, n * HASH_PTE_SIZE_64,
-                        false, n * HASH_PTE_SIZE_64);
+                        false, n * HASH_PTE_SIZE_64, true);
 }
 
 bool ppc_hash64_valid_ptex(PowerPCCPU *cpu, target_ulong ptex)

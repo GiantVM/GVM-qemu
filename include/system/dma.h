@@ -210,7 +210,7 @@ static inline void *dma_memory_map(AddressSpace *as,
     void *p;
 
     p = address_space_map(as, addr, &xlen, dir == DMA_DIRECTION_FROM_DEVICE,
-                          attrs);
+                          attrs, true, NULL);
     *len = xlen;
     return p;
 }
@@ -233,7 +233,28 @@ static inline void dma_memory_unmap(AddressSpace *as,
                                     DMADirection dir, dma_addr_t access_len)
 {
     address_space_unmap(as, buffer, (hwaddr)len,
-                        dir == DMA_DIRECTION_FROM_DEVICE, access_len);
+                        dir == DMA_DIRECTION_FROM_DEVICE, access_len, true);
+}
+
+
+static inline void *dma_memory_map_internal(AddressSpace *as,
+                                   dma_addr_t addr, dma_addr_t *len,
+                                   DMADirection dir, MemTxAttrs attrs, bool dsm_pin, bool *is_dsm)
+{
+    hwaddr xlen = *len;
+    void *p;
+
+    p = address_space_map(as, addr, &xlen, dir == DMA_DIRECTION_FROM_DEVICE, attrs, dsm_pin, is_dsm);
+    *len = xlen;
+    return p;
+}
+
+static inline void dma_memory_unmap_internal(AddressSpace *as,
+                                    void *buffer, dma_addr_t len,
+                                    DMADirection dir, dma_addr_t access_len, bool dsm_unpin)
+{
+    address_space_unmap(as, buffer, (hwaddr)len,
+                        dir == DMA_DIRECTION_FROM_DEVICE, access_len, dsm_unpin);
 }
 
 #define DEFINE_LDST_DMA(_lname, _sname, _bits, _end) \
