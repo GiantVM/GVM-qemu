@@ -65,6 +65,8 @@
 #include "e820_memory_layout.h"
 #include "trace.h"
 #include "sev.h"
+#include "interrupt-router.h"
+#include "exec/ramblock.h"
 #include CONFIG_DEVICES
 
 #ifdef CONFIG_XEN_EMU

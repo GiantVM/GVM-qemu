@@ -3000,11 +3000,11 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
         uint8_t *ram_ptr = qemu_ram_ptr_length(mr->ram_block, mr_addr, l,
                                                false, true);
 
-        MachineState *ms = MACHINE(qemu_get_machine());
+        MachineState *ms = MACHINE(qdev_get_machine());
         if (kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
                 struct kvm_dsm_memcpy cpy = {
                     .write = true,
-                    .host_virt_addr = (__u64)ptr,
+                    .host_virt_addr = (__u64)ram_ptr,
                     .userspace_addr = (__u64)buf,
                     .length = *l,
                 };
@@ -3108,11 +3108,12 @@ static MemTxResult flatview_read_continue_step(MemTxAttrs attrs, uint8_t *buf,
         uint8_t *ram_ptr = qemu_ram_ptr_length(mr->ram_block, mr_addr, l,
                                                false, false);
 
-        MachineState *ms = MACHINE(qemu_get_machine());                                       
+        MachineState *ms = MACHINE(qdev_get_machine());                                       
         if (kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
+                int ret;
                 struct kvm_dsm_memcpy cpy = {
                     .write = false,
-                    .host_virt_addr = (__u64)ptr,
+                    .host_virt_addr = (__u64)ram_ptr,
                     .userspace_addr = (__u64)buf,
                     .length = *l,
                 };
@@ -3533,7 +3534,7 @@ void *address_space_map(AddressSpace *as,
     if (is_dsm && kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path)
         *is_dsm = true;
 
-    if (kvm_enabled() && dsm_pin && ms->local_cpus != ms->smp_cpus && !ms->shm_path) {
+    if (kvm_enabled() && dsm_pin && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
         int ret;
         struct kvm_dsm_mempin pin = {
             .write = is_write,
@@ -3547,7 +3548,7 @@ void *address_space_map(AddressSpace *as,
         }
     }
 
-    return ptr
+    return ptr;
 }
 
 /* Unmaps a memory region previously mapped by address_space_map().
@@ -3570,7 +3571,7 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
         if (xen_enabled()) {
             xen_invalidate_map_cache_entry(buffer);
         }
-        if (kvm_enabled() && dsm_unpin && ms->local_cpus != ms->smp_cpus && !ms->shm_path) {
+        if (kvm_enabled() && dsm_unpin && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
             int ret;
             struct kvm_dsm_mempin pin = {
                 .write = is_write,

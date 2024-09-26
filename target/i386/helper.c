@@ -599,8 +599,7 @@ void do_cpu_init(X86CPU *cpu)
     CPUState *cs = CPU(cpu);
     CPUX86State *env = &cpu->env;
     CPUX86State *save = g_new(CPUX86State, 1);
-    MachineState *ms = MACHINE(qdev_get_machine());
-    if (ms->smp.cpus != ms->local_cpus) {
+    if (smp_cpus != local_cpus) {
         qemu_mutex_lock(&ipi_mutex);
     }
 
@@ -611,7 +610,7 @@ void do_cpu_init(X86CPU *cpu)
     cpu_reset(cs);
     cs->interrupt_request = sipi;
 
-    if (ms->smp.cpus != ms->local_cpus) {
+    if (smp_cpus != local_cpus) {
         qemu_mutex_unlock(&ipi_mutex);
     }   
 

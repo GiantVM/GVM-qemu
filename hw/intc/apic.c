@@ -34,6 +34,7 @@
 #include "target/i386/cpu.h"
 #include "interrupt-router.h"
 #include "qemu/atomic.h"
+#include "include/hw/boards.h"
 
 #define SYNC_FROM_VAPIC                 0x1
 #define SYNC_TO_VAPIC                   0x2
@@ -53,7 +54,7 @@ static void apic_update_irq(APICCommonState *s);
 static void apic_get_delivery_bitmask(uint32_t *deliver_bitmask,
                                       uint32_t dest, uint8_t dest_mode);
 
-static inline is_local_node(int index) {
+static inline bool is_local_node(int index) {
     MachineState *ms = MACHINE(qdev_get_machine());
     return (index >= ms->local_cpu_start_index && index < ms->local_cpu_start_index + ms->local_cpus);
 }
@@ -63,7 +64,7 @@ static void cpu_interrupt_remote(CPUState *cpu, int mask)
     int cpu_index = cpu->cpu_index;
     MachineState *ms = MACHINE(qdev_get_machine());
     if (ms->local_cpus != ms->smp.cpus && !is_local_node(cpu_index)) {
-        special_interrupt_forwarding(cpu, mask);
+        special_interrupt_forwarding(cpu_index, mask);
     }
     else {
         cpu_interrupt(cpu, mask);
@@ -98,7 +99,7 @@ static void apic_init_level_deassert_remote(APICCommonState *s)
     int cpu_index = (CPU(s->cpu))->cpu_index;
     MachineState *ms = MACHINE(qdev_get_machine());
     if (ms->local_cpus != ms->smp.cpus && !is_local_node(cpu_index)) {
-        init_level_deassert_forwarding(index);
+        init_level_deassert_forwarding(cpu_index);
     } else {
         s->arb_id = s->id;
     }

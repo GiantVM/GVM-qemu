@@ -3152,8 +3152,9 @@ static inline bool memory_access_is_direct(MemoryRegion *mr, bool is_write,
 #include "sysemu/kvm.h"
 #include "sysemu/sysemu.h"
 
-extern bool is_local_shm(void);
-
+extern int local_cpus;
+extern int smp_cpus;
+extern const char *shm_path;
 /**
  * address_space_read: read from an address space.
  *

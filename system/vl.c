@@ -208,6 +208,7 @@ static int default_net = 1;
 /* distributed QEMU variables */
 const char* shm_path = NULL;
 int local_cpus = -1;
+int smp_cpus = -1;
 int local_cpu_start_index = 0;
 const char *cluster_iplist = NULL;
 
@@ -256,10 +257,10 @@ static QemuOptsList qemu_local_cpu_opts = {
             .name = "iplist",
             .type = QEMU_OPT_STRING,
             .help = "list of cluster node ip address (seperated by space)",
-        }
+        },
         { /*end of list */ }
     }
-}
+};
 
 static QemuOptsList qemu_rtc_opts = {
     .name = "rtc",
@@ -2866,14 +2867,16 @@ void qmp_x_exit_preconfig(Error **errp)
     }
 }
 
+void qemu_init_distributd(MachineState *ms);
 void qemu_init_distributd(MachineState *ms)
 {
     ms->shm_path = NULL;
     ms->local_cpus = -1;
     ms->local_cpu_start_index = 0;
-    ms->qeum_nums = 0;
+    ms->qemu_nums = 0;
     ms->cluster_iplist = NULL;
     
+    smp_cpus = ms->smp.cpus;
     ms->shm_path = shm_path;
     if (local_cpus == -1) {
         ms->local_cpus = local_cpus = ms->smp.cpus;
@@ -2885,13 +2888,13 @@ void qemu_init_distributd(MachineState *ms)
     ms->cluster_iplist = cluster_iplist;
     ms->qemu_nums = (ms->smp.cpus + ms->local_cpus - 1) / local_cpus;
 
-     if (local_cpus > ms->smp_cpus) {
+     if (local_cpus > ms->smp.cpus) {
         error_report("Number of local SMP CPUs requested (%d) exceeds "
 				"smp CPUs (%d) ",
                 local_cpus, ms->smp.cpus);
         exit(1);
     }
-    if (local_cpu_start_index + local_cpus > ms->smp_cpus) {
+    if (local_cpu_start_index + local_cpus > ms->smp.cpus) {
         error_report("Last Index of local SMP CPUs requested (%d) exceeds "
 				"Last Index of smp CPUs (%d) ",
                      local_cpu_start_index + local_cpus - 1, ms->smp.cpus - 1);

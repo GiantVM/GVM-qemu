@@ -48,11 +48,6 @@ static QEMUFile **listen_rsp_files = NULL;
 QemuMutex ipi_mutex;
 QemuMutex io_forwarding_mutex;
 
-static MachineState *router_ms;
-static int smp_cpus;
-static int qemu_nums;
-static int local_cpus;
-static int local_cpu_start_index;
 
 int parse_cluster_iplist(const char *cluster_iplist)
 {
@@ -97,21 +92,6 @@ char **get_cluster_iplist(uint32_t *len)
     return router_hosts;
 }
 
-int pr_debug_log = 1;
-
-int pr_debug(const char *format, ...)
-{
-    if (!pr_debug_log) {
-        return 0;
-    }
-    va_list arg;
-    int done;
-
-    va_start(arg, format);
-    done = vfprintf(stdout, format, arg);
-    va_end(arg);
-    return done;
-}
 
 
 enum forward_type {
@@ -307,6 +287,7 @@ static int get_rdma_router_address(int target, int role, struct router_address *
     int host;
     int port;
     int qemu_index;
+    MachineState *ms = MACHINE(qdev_get_machine());
 
     if (addr == NULL) {
         return -EINVAL;
@@ -316,24 +297,24 @@ static int get_rdma_router_address(int target, int role, struct router_address *
         return -EINVAL;
     }
 
-    qemu_index = local_cpu_start_index / local_cpus;
+    qemu_index = ms->local_cpu_start_index / ms->local_cpus;
 
     switch (role) {
         case RDMA_LISTEN:
             host = qemu_index;
-            port = qemu_nums * qemu_index * 2 + target * 2;
+            port = ms->qemu_nums * qemu_index * 2 + target * 2;
             break;
         case RDMA_CONNECT_REVERSE:
             host = qemu_index;
-            port = qemu_nums * qemu_index * 2 + target * 2 + 1;
+            port = ms->qemu_nums * qemu_index * 2 + target * 2 + 1;
             break;
         case RDMA_CONNECT:
             host = target;
-            port = qemu_nums * target * 2 + qemu_index * 2;
+            port = ms->qemu_nums * target * 2 + qemu_index * 2;
             break;
         case RDMA_LISTEN_REVERSE:
             host = target;
-            port = qemu_nums * target * 2 + qemu_index * 2 + 1;
+            port = ms->qemu_nums * target * 2 + qemu_index * 2 + 1;
             break;
         default:
             printf("get_rdma_router_address failed. role %d is illegal\n", role);
@@ -353,9 +334,11 @@ static void qemu_io_router_thread_run_rdma(void)
     int i = 0;
     int done = 0;
 
+    MachineState *ms = MACHINE(qdev_get_machine());
+
     // we build 2x connection since the connection is simplex
-    for (i = 0; i < qemu_nums; i++) {
-        if (i == local_cpu_start_index / local_cpus) {
+    for (i = 0; i < ms->qemu_nums; i++) {
+        if (i == ms->local_cpu_start_index / ms->local_cpus) {
             continue;
         }
         ret = get_rdma_router_address(i, RDMA_LISTEN, &addr);
@@ -375,8 +358,8 @@ static void qemu_io_router_thread_run_rdma(void)
         printf("QEMU %d wait for RDMA connection on %s:%s\n", i, addr.host, addr.port);
     }
 
-    while (done < qemu_nums - 1) {
-        for (i = 0; i < qemu_nums; i++) {
+    while (done < ms->qemu_nums - 1) {
+        for (i = 0; i < ms->qemu_nums; i++) {
             if (listen_req_files[i]) {
                 struct io_router_loop_arg *arg = (struct io_router_loop_arg *)g_malloc0(sizeof(struct io_router_loop_arg));
                 memset(arg, 0, sizeof(struct io_router_loop_arg));
@@ -399,10 +382,11 @@ static void connect_io_router_rdma(void)
     int ret;
     int i = 0;
     int done = 0;
-    int local_index = local_cpu_start_index / local_cpus;
+    MachineState *ms = MACHINE(qdev_get_machine());
+    int local_index = ms->local_cpu_start_index / ms->local_cpus;
 
     // we build 2x connection since the connection is simplex
-    for (i = 0; i < qemu_nums; i ++) {
+    for (i = 0; i < ms->qemu_nums; i ++) {
         if (i == local_index) {
             continue;
         }
@@ -424,10 +408,10 @@ static void connect_io_router_rdma(void)
         printf("QEMU %d connect to QEMU %d %s:%s success\n", local_index, i, addr.host, addr.port);
     }
 
-    bool *done_list = (bool *)g_malloc0(qemu_nums * sizeof(bool));
+    bool *done_list = (bool *)g_malloc0(ms->qemu_nums * sizeof(bool));
 
-    while (done < qemu_nums - 1) {
-        for (i = 0; i < qemu_nums; i++) {
+    while (done < ms->qemu_nums - 1) {
+        for (i = 0; i < ms->qemu_nums; i++) {
             if (rsp_files[i] && !done_list[i]) {
                 done_list[i] = true;
                 done++;
@@ -480,7 +464,7 @@ static gboolean io_router_accept_connection(QIOChannel *ioc,
     QemuThread *thread = g_malloc0(sizeof(QemuThread));
     struct io_router_loop_arg *arg = (struct io_router_loop_arg *)g_malloc0(sizeof(struct io_router_loop_arg));
     memset(arg, 0, sizeof(struct io_router_loop_arg));
-    arg->req_file = qemu_fopen_channel_input(channel);
+    arg->rsp_file = qemu_file_new_input(channel);
     arg->rsp_file = qemu_file_get_return_path(arg->req_file);
     arg->channel = channel;
 
@@ -518,8 +502,7 @@ static void connect_io_router_single(int index)
         return;
     }
     connect_addr->type = SOCKET_ADDRESS_TYPE_INET;
-    connect_addr->u.inet.data = g_new(InetSocketAddress, 1);
-    *connect_addr->u.inet.data = (InetSocketAddress) {
+    connect_addr->u.inet = (InetSocketAddress) {
         .host = g_strdup(addr.host),
         .port = g_strdup(addr.port), /* NULL == Auto-select */
     };
@@ -529,7 +512,6 @@ static void connect_io_router_single(int index)
     channel = QIO_CHANNEL(qio_channel_socket_new());
     qio_channel_set_name(QIO_CHANNEL(channel), "io-send");
 
-    pr_debug("Connecting...\n");
 
     while (true) {
         if (qio_channel_socket_connect_sync(QIO_CHANNEL_SOCKET(channel),
@@ -541,7 +523,7 @@ static void connect_io_router_single(int index)
     }
 
     qio_channel_set_delay(channel, false);
-    req_files[index] = qemu_fopen_channel_output(channel);
+    req_files[index] = qemu_file_new_output(channel);
     rsp_files[index] = qemu_file_get_return_path(req_files[index]);
     printf("connecting io router done\n");
 }
@@ -560,7 +542,8 @@ static void *qemu_io_router_thread_run(void *arg)
     QIOChannelSocket *lioc;
     Error *local_err = NULL;
     listen_addr = g_new0(SocketAddress, 1);
-    int index = local_cpu_start_index / local_cpus;
+    MachineState *ms = MACHINE(qdev_get_machine());
+    int index = ms->local_cpu_start_index / ms->local_cpus;
 
 #ifdef ROUTER_CONNECTION_UNIX_SOCKET
     char sockpath[30];
@@ -583,8 +566,7 @@ static void *qemu_io_router_thread_run(void *arg)
         return NULL;
     }
     listen_addr->type = SOCKET_ADDRESS_TYPE_INET;
-    listen_addr->u.inet.data = g_new(InetSocketAddress, 1);
-    *listen_addr->u.inet.data = (InetSocketAddress) {
+    listen_addr->u.inet = (InetSocketAddress) {
         .host = g_strdup(addr.host),
         .port = g_strdup(addr.port), /* NULL == Auto-select */
     };
@@ -594,7 +576,7 @@ static void *qemu_io_router_thread_run(void *arg)
     lioc = qio_channel_socket_new();
     qio_channel_set_name(QIO_CHANNEL(lioc), "io-router-listener-channel");
 
-    if (qio_channel_socket_listen_sync(lioc, listen_addr, &local_err) < 0) {
+    if (qio_channel_socket_listen_sync(lioc, listen_addr, 1, &local_err) < 0) {
         printf("io-router listen error, exit...");
         object_unref(OBJECT(lioc));
         qapi_free_SocketAddress(listen_addr);
@@ -619,10 +601,11 @@ static void connect_io_router(void)
 #ifdef ROUTER_CONNECTION_RDMA
     connect_io_router_rdma();
 #else
-    int index = local_cpu_start_index / local_cpus;
+    MachineState *ms = MACHINE(qdev_get_machine());
+    int index = ms->local_cpu_start_index / ms->local_cpus;
 
     int i;
-    for (i = 0; i < qemu_nums; i++) {
+    for (i = 0; i < ms->qemu_nums; i++) {
         if (i != index) {
             connect_io_router_single(i);
         }
@@ -634,14 +617,16 @@ static void connect_io_router(void)
 
 void disconnect_io_router(void)
 {
-    if (local_cpus == smp_cpus)
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->local_cpus == ms->smp.cpus) {
         return;
+    }
 
     QEMUFile *io_connect_file;
     QEMUFile *io_connect_return_file;
 
     int i;
-    for (i = 0; i < qemu_nums; i++) {
+    for (i = 0; i < ms->qemu_nums; i++) {
         io_connect_file = req_files[i];
         io_connect_return_file = rsp_files[i];
 
@@ -664,22 +649,18 @@ void start_io_router(void)
     router.thread_id = -1;
     int size;
 
-    if (local_cpus == smp_cpus)
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (ms->local_cpus == ms->smp.cpus) {
         return;
+    }
 
-    router_ms = MACHINE(qdev_get_machine());
-    smp_cpus = router_ms->smp.cpus;
-    qemu_nums = router_ms->qemu_nums;
-    local_cpus = router_ms->local_cpus;
-    local_cpu_start_index = router_ms->local_cpu_start_index;
-
-    if (router_hosts_num != qemu_nums) {
+    if (router_hosts_num != ms->qemu_nums) {
         error_report("invalid number of cluster iplist");
         exit(1);
     }
-    printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", qemu_nums, smp_cpus, local_cpus);
+    printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", ms->qemu_nums, ms->smp.cpus, ms->local_cpus);
 
-    size = qemu_nums * sizeof(QEMUFile *);
+    size = ms->qemu_nums * sizeof(QEMUFile *);
     req_files = (QEMUFile **)g_malloc0(size);
     rsp_files = (QEMUFile **)g_malloc0(size);
     listen_req_files = (QEMUFile **)g_malloc0(size);
@@ -707,9 +688,11 @@ void pio_forwarding(uint16_t port, MemTxAttrs attrs, void *data, int direction,
     QEMUFile *io_connect_file;
     QEMUFile *io_connect_return_file;
 
+    MachineState *ms = MACHINE(qdev_get_machine());
+
     if (broadcast) {
         int i;
-        for (i = 0; i < qemu_nums; i++) {
+        for (i = 0; i < ms->qemu_nums; i++) {
             io_connect_file = req_files[i];
             io_connect_return_file = rsp_files[i];
 
@@ -809,8 +792,10 @@ void lapic_forwarding(int cpu_index, hwaddr addr, uint32_t val)
     qemu_mutex_lock(&io_forwarding_mutex);
     QEMUFile *io_connect_file;
 
+    MachineState *ms = MACHINE(qdev_get_machine());
+
     int i;
-    for (i = 0; i < qemu_nums; i++) {
+    for (i = 0; i < ms->qemu_nums; i++) {
         io_connect_file = req_files[i];
         if (io_connect_file) {
             qemu_put_be16(io_connect_file, LAPIC);
@@ -832,7 +817,8 @@ void lapic_forwarding(int cpu_index, hwaddr addr, uint32_t val)
 void special_interrupt_forwarding(int cpu_index, int mask)
 {
     qemu_mutex_lock(&io_forwarding_mutex);
-    QEMUFile *io_connect_file = req_files[cpu_index / local_cpus];
+    MachineState *ms = MACHINE(qdev_get_machine());
+    QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
 
     qemu_put_be16(io_connect_file, SPECIAL_INT);
     /* Indicate which CPU we want to forward this interrupt to */
@@ -847,7 +833,8 @@ void special_interrupt_forwarding(int cpu_index, int mask)
 void startup_forwarding(int cpu_index, int vector_num)
 {
     qemu_mutex_lock(&io_forwarding_mutex);
-    QEMUFile *io_connect_file = req_files[cpu_index / local_cpus];
+    MachineState *ms = MACHINE(qdev_get_machine());
+    QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
 
     qemu_put_be16(io_connect_file, SIPI);
     /* Indicate which CPU we want to forward this interrupt to */
@@ -862,7 +849,8 @@ void startup_forwarding(int cpu_index, int vector_num)
 void init_level_deassert_forwarding(int cpu_index)
 {
     qemu_mutex_lock(&io_forwarding_mutex);
-    QEMUFile *io_connect_file = req_files[cpu_index / local_cpus];
+    MachineState *ms = MACHINE(qdev_get_machine());
+    QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
 
     qemu_put_be16(io_connect_file, INIT_LEVEL_DEASSERT);
     /* Indicate which CPU we want to forward this interrupt to */
@@ -876,7 +864,8 @@ void init_level_deassert_forwarding(int cpu_index)
 void irq_forwarding(int cpu_index, int vector_num, int trigger_mode)
 {
     qemu_mutex_lock(&io_forwarding_mutex);
-    QEMUFile *io_connect_file = req_files[cpu_index / local_cpus];
+    MachineState *ms = MACHINE(qdev_get_machine());
+    QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
 
     qemu_put_be16(io_connect_file, FIXED_INT);
     /* Indicate which CPU we want to forward this interrupt to */
@@ -908,8 +897,10 @@ void shutdown_forwarding(void)
     qemu_mutex_lock(&io_forwarding_mutex);
     QEMUFile *io_connect_file;
 
+    MachineState *ms = MACHINE(qdev_get_machine());
+
     int i;
-    for (i = 0; i < qemu_nums; i++) {
+    for (i = 0; i < ms->qemu_nums; i++) {
         io_connect_file = req_files[i];
         if (io_connect_file) {
             qemu_put_be16(io_connect_file, SHUTDOWN);
@@ -927,8 +918,10 @@ void reset_forwarding(void)
     qemu_mutex_lock(&io_forwarding_mutex);
     QEMUFile *io_connect_file;
 
+    MachineState *ms = MACHINE(qdev_get_machine());
+
     int i;
-    for (i = 0; i < qemu_nums; i++) {
+    for (i = 0; i < ms->qemu_nums; i++) {
         io_connect_file = req_files[i];
         if (io_connect_file) {
             qemu_put_be16(io_connect_file, RESET);
@@ -945,9 +938,10 @@ void exit_forwarding(void)
 {
     qemu_mutex_lock(&io_forwarding_mutex);
     QEMUFile *io_connect_file;
+    MachineState *ms = MACHINE(qdev_get_machine());
 
     int i;
-    for (i = 0; i < qemu_nums; i++) {
+    for (i = 0; i < ms->qemu_nums; i++) {
         io_connect_file = req_files[i];
         if (io_connect_file) {
             qemu_put_be16(io_connect_file, EXIT);

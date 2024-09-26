@@ -161,6 +161,8 @@ static void do_kvmclock_ctrl(CPUState *cpu, run_on_cpu_data data)
     }
 }
 
+extern int local_cpu_start_index;
+
 static void kvmclock_vm_state_change(void *opaque, bool running,
                                      RunState state)
 {
@@ -190,8 +192,7 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
         data.clock = s->clock;
 
         /* AP should get BSP kvmclock and apply it to its own kvmclock */
-        MachineState *ms = MACHINE(qdev_get_machine());
-        if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index != 0) {
+        if (local_cpus != smp_cpus && local_cpu_start_index != 0) {
             struct timespec begin_ts, end_ts;
             clock_gettime(CLOCK_MONOTONIC, &begin_ts);
             kvmclock_fetching(&time_clock);
@@ -200,7 +201,7 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
             printf("kvmclock sync RTT[%lu]\n", rtt);
             time_clock += rtt / 2;
             data.clock = time_clock;
-            printf("QEMU %d set kvmclock: %llu\n", ms->local_cpu_start_index, data.clock);
+            printf("QEMU %d set kvmclock: %llu\n", local_cpu_start_index, data.clock);
         }
 
         ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, &data);

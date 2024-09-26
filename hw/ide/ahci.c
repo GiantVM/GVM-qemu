@@ -35,7 +35,8 @@
 
 #include "trace.h"
 
-#include "sysemu/kvm.h"
+int kvm_vm_ioctl(KVMState *s, int type, ...);
+#include <linux/kvm.h>
 
 static void check_cmd(AHCIState *s, int port);
 static void handle_cmd(AHCIState *s, int port, uint8_t slot);
@@ -1416,7 +1417,7 @@ static void handle_cmd(AHCIState *s, int port, uint8_t slot)
         pin.length = 32;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
         }
     }
 
@@ -1456,7 +1457,7 @@ done:
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
         }
     }
     return;

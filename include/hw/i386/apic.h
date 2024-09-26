@@ -1,6 +1,7 @@
 #ifndef APIC_H
 #define APIC_H
 
+#include "exec/hwaddr.h"
 
 /* apic.c */
 void apic_set_max_apic_id(uint32_t max_apic_id);

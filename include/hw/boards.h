@@ -453,11 +453,6 @@ struct MachineState {
     const char *cluster_iplist;
 };
 
-bool is_local_shm(void)
-{
-    MachineState *ms = MACHINE(qdev_get_machine());
-    return (ms->local_cpus == ms->smp.cpus || ms->shm_path != NULL);
-}
 
 /*
  * The macros which follow are intended to facilitate the

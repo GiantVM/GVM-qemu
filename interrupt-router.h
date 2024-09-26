@@ -12,7 +12,6 @@ extern int pr_debug_log;
 int parse_cluster_iplist(const char *cluster_iplist);
 char **get_cluster_iplist(uint32_t *len);
 
-int pr_debug(const char *format, ...);
 
 typedef struct {
     Object parent_obj;
