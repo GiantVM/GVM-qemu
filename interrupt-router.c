@@ -19,7 +19,7 @@
 #include "interrupt-router.h"
 #include "qom/object_interfaces.h"
 #include "hw/boards.h"
-#include "rdma.h"
+#include "migration/rdma.h"
 
 #define ROUTER_BUFFER_SIZE 1024
 // #define ROUTER_CONNECTION_UNIX_SOCKET
