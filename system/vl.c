@@ -248,18 +248,15 @@ static QemuOptsList qemu_local_cpu_opts = {
         {
             .name = "cpus",
             .type = QEMU_OPT_NUMBER,
-            .help = "number of local CPUs",
         }, {
             .name = "start",
             .type = QEMU_OPT_NUMBER,
-            .help = "start index of local CPUs",
         }, {
             .name = "iplist",
             .type = QEMU_OPT_STRING,
-            .help = "list of cluster node ip address (seperated by space)",
         },
         { /*end of list */ }
-    }
+    },
 };
 
 static QemuOptsList qemu_rtc_opts = {
@@ -2839,7 +2836,6 @@ void qmp_x_exit_preconfig(Error **errp)
     if (!qemu_machine_creation_done(errp)) {
         return;
     }
-
     if (loadvm) {
         RunState state = autostart ? RUN_STATE_RUNNING : runstate_get();
         load_snapshot(loadvm, NULL, false, NULL, &error_fatal);
@@ -3939,6 +3935,7 @@ void qemu_init(int argc, char **argv)
 
     if (!preconfig_requested) {
         qmp_x_exit_preconfig(&error_fatal);
+        printf("qmp_x_exit_preconfig\n");
     }
     qemu_init_displays();
     accel_setup_post(current_machine);
