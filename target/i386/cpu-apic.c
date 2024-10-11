@@ -26,8 +26,8 @@ APICCommonClass *apic_get_class(Error **errp)
     /* TODO: in-kernel irqchip for hvf */
     if (kvm_enabled()) {
         if (!kvm_irqchip_in_kernel()) {
-            error_setg(errp, "KVM does not support userspace APIC");
-            return NULL;
+            // error_setg(errp, "KVM does not support userspace APIC");
+            // return NULL;
         }
         apic_type = "kvm-apic";
     } else if (xen_enabled()) {

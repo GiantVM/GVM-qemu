@@ -1040,12 +1040,10 @@ static void apic_send_msi(MSIMessage *msi)
     /* XXX: Ignore redirection hint. */
     if (vector < 16) {
         DeviceState *dev = cpu_get_current_apic();
-        printf("error: msi send vector in range 0-15\n");
         if (dev) {
             APIC(dev)->esr |= APIC_ESR_RECV_ACCEPT;
             apic_local_deliver(APIC(dev), APIC_LVT_ERROR);
         } else {
-            printf("error: cannot find current apic\n");
         }
     }
     else {

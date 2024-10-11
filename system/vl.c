@@ -2903,7 +2903,7 @@ void qemu_init_distributd(MachineState *ms)
         exit(1);
     }
 
-    printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", ms->qemu_nums, ms->smp.cpus, ms->local_cpus);
+    // Need to do: printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", ms->qemu_nums, ms->smp.cpus, ms->local_cpus);
 
     start_io_router();
 }
@@ -3935,7 +3935,6 @@ void qemu_init(int argc, char **argv)
 
     if (!preconfig_requested) {
         qmp_x_exit_preconfig(&error_fatal);
-        printf("qmp_x_exit_preconfig\n");
     }
     qemu_init_displays();
     accel_setup_post(current_machine);

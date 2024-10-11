@@ -658,7 +658,6 @@ void start_io_router(void)
         error_report("invalid number of cluster iplist");
         exit(1);
     }
-    printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", ms->qemu_nums, ms->smp.cpus, ms->local_cpus);
 
     size = ms->qemu_nums * sizeof(QEMUFile *);
     req_files = (QEMUFile **)g_malloc0(size);
