@@ -477,7 +477,7 @@ static gboolean io_router_accept_connection(QIOChannel *ioc,
 
 static void connect_io_router_single(int index)
 {
-    QIOChannelSocket *channel;
+    QIOChannel *channel;
     SocketAddress *connect_addr;
     Error *err = NULL;
 
@@ -511,12 +511,11 @@ static void connect_io_router_single(int index)
     printf("connecting %s:%s\n", addr.host, addr.port);
 #endif
 
-    channel = qio_channel_socket_new();
+    channel = QIO_CHANNEL(qio_channel_socket_new());
     qio_channel_set_name(QIO_CHANNEL(channel), "io-send");
 
-
     while (true) {
-        if (qio_channel_socket_connect_sync(channel,
+        if (qio_channel_socket_connect_sync(QIO_CHANNEL_SOCKET(channel),
                                             connect_addr,
                                             &err) == 0) {
             break;
