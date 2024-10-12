@@ -846,6 +846,7 @@ void pc_memory_init(PCMachineState *pcms,
     linux_boot = (machine->kernel_filename != NULL);
 
     /* Start DSM */
+    printf("start DSM\n");
     if (machine->local_cpus != machine->smp.cpus && !machine->shm_path) {
         if (kvm_enabled() && kvm_check_extension(kvm_state, KVM_CAP_X86_DSM)) {
             params.dsm_index = machine->local_cpu_start_index / machine->local_cpus;

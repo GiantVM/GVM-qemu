@@ -2824,6 +2824,9 @@ static bool qemu_machine_creation_done(Error **errp)
     return true;
 }
 
+void qemu_init_distributd(MachineState *ms);
+
+
 void qmp_x_exit_preconfig(Error **errp)
 {
     if (phase_check(PHASE_MACHINE_INITIALIZED)) {
@@ -2845,6 +2848,8 @@ void qmp_x_exit_preconfig(Error **errp)
         replay_vmstate_init();
     }
 
+    qemu_init_distributd(current_machine);
+
     if (incoming) {
         Error *local_err = NULL;
         if (strcmp(incoming, "defer") != 0) {
@@ -2863,45 +2868,8 @@ void qmp_x_exit_preconfig(Error **errp)
     }
 }
 
-void qemu_init_distributd(MachineState *ms);
 void qemu_init_distributd(MachineState *ms)
 {
-    ms->shm_path = NULL;
-    ms->local_cpus = -1;
-    ms->local_cpu_start_index = 0;
-    ms->qemu_nums = 0;
-    ms->cluster_iplist = NULL;
-    
-    smp_cpus = ms->smp.cpus;
-    ms->shm_path = shm_path;
-    if (local_cpus == -1) {
-        ms->local_cpus = local_cpus = ms->smp.cpus;
-    }
-    else {
-        ms->local_cpus = local_cpus;
-    }
-    ms->local_cpu_start_index = local_cpu_start_index;
-    ms->cluster_iplist = cluster_iplist;
-    ms->qemu_nums = (ms->smp.cpus + ms->local_cpus - 1) / local_cpus;
-
-     if (local_cpus > ms->smp.cpus) {
-        error_report("Number of local SMP CPUs requested (%d) exceeds "
-				"smp CPUs (%d) ",
-                local_cpus, ms->smp.cpus);
-        exit(1);
-    }
-    if (local_cpu_start_index + local_cpus > ms->smp.cpus) {
-        error_report("Last Index of local SMP CPUs requested (%d) exceeds "
-				"Last Index of smp CPUs (%d) ",
-                     local_cpu_start_index + local_cpus - 1, ms->smp.cpus - 1);
-        exit(1);
-    }
-    if (local_cpu_start_index % local_cpus != 0) {
-        error_report("Start Index of local SMP CPUs requested (%d) not aligned "
-				"with Local CPU Number requested (%d)",
-                     local_cpu_start_index, local_cpus);
-        exit(1);
-    }
 
     // Need to do: printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", ms->qemu_nums, ms->smp.cpus, ms->local_cpus);
 
@@ -3931,7 +3899,43 @@ void qemu_init(int argc, char **argv)
         exit(0);
     }
 
-    qemu_init_distributd(current_machine);
+    MachineState *ms = current_machine;
+    ms->shm_path = NULL;
+    ms->local_cpus = -1;
+    ms->local_cpu_start_index = 0;
+    ms->qemu_nums = 0;
+    ms->cluster_iplist = NULL;
+    
+    smp_cpus = ms->smp.cpus;
+    ms->shm_path = shm_path;
+    if (local_cpus == -1) {
+        ms->local_cpus = local_cpus = ms->smp.cpus;
+    }
+    else {
+        ms->local_cpus = local_cpus;
+    }
+    ms->local_cpu_start_index = local_cpu_start_index;
+    ms->cluster_iplist = cluster_iplist;
+    ms->qemu_nums = (ms->smp.cpus + ms->local_cpus - 1) / local_cpus;
+
+     if (local_cpus > ms->smp.cpus) {
+        error_report("Number of local SMP CPUs requested (%d) exceeds "
+				"smp CPUs (%d) ",
+                local_cpus, ms->smp.cpus);
+        exit(1);
+    }
+    if (local_cpu_start_index + local_cpus > ms->smp.cpus) {
+        error_report("Last Index of local SMP CPUs requested (%d) exceeds "
+				"Last Index of smp CPUs (%d) ",
+                     local_cpu_start_index + local_cpus - 1, ms->smp.cpus - 1);
+        exit(1);
+    }
+    if (local_cpu_start_index % local_cpus != 0) {
+        error_report("Start Index of local SMP CPUs requested (%d) not aligned "
+				"with Local CPU Number requested (%d)",
+                     local_cpu_start_index, local_cpus);
+        exit(1);
+    }
 
     if (!preconfig_requested) {
         qmp_x_exit_preconfig(&error_fatal);
