@@ -135,6 +135,7 @@ static void *io_router_loop(void *arg)
 {
     uint8_t type;
     int cpu_index;
+    Error *err = NULL;
 
     /* PIO */
     uint16_t port;
@@ -275,7 +276,7 @@ static void *io_router_loop(void *arg)
         }
     }
     if (argp->channel) {
-        qio_channel_close(argp->channel, NULL);
+        qio_channel_close(argp->channel, &err);
     }
     return NULL;
 }
@@ -476,8 +477,9 @@ static gboolean io_router_accept_connection(QIOChannel *ioc,
 
 static void connect_io_router_single(int index)
 {
-    QIOChannel *channel;
+    QIOChannelSocket *channel;
     SocketAddress *connect_addr;
+    Error *err = NULL;
 
     connect_addr = g_new0(SocketAddress, 1);
 
@@ -509,14 +511,14 @@ static void connect_io_router_single(int index)
     printf("connecting %s:%s\n", addr.host, addr.port);
 #endif
 
-    channel = QIO_CHANNEL(qio_channel_socket_new());
+    channel = qio_channel_socket_new();
     qio_channel_set_name(QIO_CHANNEL(channel), "io-send");
 
 
     while (true) {
-        if (qio_channel_socket_connect_sync(QIO_CHANNEL_SOCKET(channel),
+        if (qio_channel_socket_connect_sync(channel,
                                             connect_addr,
-                                            NULL) == 0) {
+                                            &err) == 0) {
             break;
         }
         usleep(100000);
