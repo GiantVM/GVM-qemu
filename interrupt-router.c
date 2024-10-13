@@ -133,6 +133,7 @@ static void kvm_handle_remote_io(uint16_t port, MemTxAttrs attrs, void *data, in
 
 static void *io_router_loop(void *arg)
 {
+    printf("enter router_loop");
     uint8_t type;
     int cpu_index;
     Error *err = NULL;
@@ -444,13 +445,16 @@ static int get_router_address(int target, struct router_address *addr)
 
 static gboolean io_router_accept_connection(QIOChannel *ioc,
                                                  GIOCondition condition,
-                                                 gpointer opaque)
+                                                 gpointer user_data)
 {
     QIOChannelSocket *sioc;
-    QIOChannel *channel;
+    QIOChannel *channel, *my_ioc;
     Error *err = NULL;
+    printf("enter accept connection");
 
-    sioc = qio_channel_socket_accept(QIO_CHANNEL_SOCKET(ioc),
+    my_ioc = user_data;
+
+    sioc = qio_channel_socket_accept(QIO_CHANNEL_SOCKET(my_ioc),
                                      &err);
     if (!sioc) {
         error_report("could not accept io router connection (%s)",
@@ -507,6 +511,8 @@ static void connect_io_router_single(int index)
     connect_addr->u.inet = (InetSocketAddress) {
         .host = g_strdup(addr.host),
         .port = g_strdup(addr.port), /* NULL == Auto-select */
+        .has_ipv4 = true,
+        .ipv4 =true,
     };
     printf("connecting %s:%s\n", addr.host, addr.port);
 #endif
@@ -520,6 +526,7 @@ static void connect_io_router_single(int index)
                                             &err) == 0) {
             break;
         }
+        err = NULL;
         usleep(100000);
     }
 
@@ -570,6 +577,8 @@ static void *qemu_io_router_thread_run(void *arg)
     listen_addr->u.inet = (InetSocketAddress) {
         .host = g_strdup(addr.host),
         .port = g_strdup(addr.port), /* NULL == Auto-select */
+        .has_ipv4 = true,
+        .ipv4 =true,
     };
     printf("QEMU %d listen on TCP socket %s:%s\n", index, addr.host, addr.port);
 #endif

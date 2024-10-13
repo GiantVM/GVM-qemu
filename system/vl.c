@@ -2824,7 +2824,7 @@ static bool qemu_machine_creation_done(Error **errp)
     return true;
 }
 
-void qemu_init_distributd(MachineState *ms);
+void qemu_init_distributed(MachineState *ms);
 
 
 void qmp_x_exit_preconfig(Error **errp)
@@ -2848,7 +2848,9 @@ void qmp_x_exit_preconfig(Error **errp)
         replay_vmstate_init();
     }
 
-    qemu_init_distributd(current_machine);
+    qemu_init_distributed(current_machine);
+    printf("finish distributed\n");
+    fflush(stdout);
 
     if (incoming) {
         Error *local_err = NULL;
@@ -2868,7 +2870,7 @@ void qmp_x_exit_preconfig(Error **errp)
     }
 }
 
-void qemu_init_distributd(MachineState *ms)
+void qemu_init_distributed(MachineState *ms)
 {
 
     // Need to do: printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", ms->qemu_nums, ms->smp.cpus, ms->local_cpus);
@@ -3940,8 +3942,14 @@ void qemu_init(int argc, char **argv)
     if (!preconfig_requested) {
         qmp_x_exit_preconfig(&error_fatal);
     }
+    printf("enter display\n");
+    fflush(stdout);
     qemu_init_displays();
+    printf("enter accel setup\n");
+    fflush(stdout);
     accel_setup_post(current_machine);
+    printf("accel setup end\n");
+    fflush(stdout);
     os_setup_post();
     resume_mux_open();
 }
