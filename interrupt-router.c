@@ -448,13 +448,12 @@ static gboolean io_router_accept_connection(QIOChannel *ioc,
                                                  gpointer user_data)
 {
     QIOChannelSocket *sioc;
-    QIOChannel *channel, *my_ioc;
+    QIOChannel *channel;
     Error *err = NULL;
     printf("enter accept connection");
+    fflush(stdout);
 
-    my_ioc = user_data;
-
-    sioc = qio_channel_socket_accept(QIO_CHANNEL_SOCKET(my_ioc),
+    sioc = qio_channel_socket_accept(QIO_CHANNEL_SOCKET(ioc),
                                      &err);
     if (!sioc) {
         error_report("could not accept io router connection (%s)",
@@ -469,7 +468,7 @@ static gboolean io_router_accept_connection(QIOChannel *ioc,
     QemuThread *thread = g_malloc0(sizeof(QemuThread));
     struct io_router_loop_arg *arg = (struct io_router_loop_arg *)g_malloc0(sizeof(struct io_router_loop_arg));
     memset(arg, 0, sizeof(struct io_router_loop_arg));
-    arg->rsp_file = qemu_file_new_input(channel);
+    arg->req_file = qemu_file_new_input(channel);
     arg->rsp_file = qemu_file_get_return_path(arg->req_file);
     arg->channel = channel;
 

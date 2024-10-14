@@ -3951,5 +3951,7 @@ void qemu_init(int argc, char **argv)
     printf("accel setup end\n");
     fflush(stdout);
     os_setup_post();
+    printf("poset end\n");
+    fflush(stdout);
     resume_mux_open();
 }
