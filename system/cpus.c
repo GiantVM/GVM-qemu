@@ -441,8 +441,6 @@ void qemu_init_cpu_loop(void)
 void run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data)
 {
     if (!cpu->local) {
-        printf("run_on_cpu: not local CPU, ignore here. "
-				"This could be a latent bug.\n");
         return;
     }
     do_run_on_cpu(cpu, func, data, &bql);
