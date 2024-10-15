@@ -33,7 +33,7 @@ ram_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
     ram_flags |= backend->guest_memfd ? RAM_GUEST_MEMFD : 0;
 
     if (shm_path) {
-        fprintf(stdout, "Use distributed shared memory mode.\n");
+        fprintf(stdout, "Use local shared memory mode.\n");
         fflush(stdout);
         ram_flags |= RAM_SHARED;
         return memory_region_init_shram_flags_nomigrate(&backend->mr, OBJECT(backend),
