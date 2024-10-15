@@ -192,17 +192,17 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
         data.clock = s->clock;
 
         /* AP should get BSP kvmclock and apply it to its own kvmclock */
-         if (local_cpus != smp_cpus && local_cpu_start_index != 0) {
-             struct timespec begin_ts, end_ts;
-             clock_gettime(CLOCK_MONOTONIC, &begin_ts);
-             kvmclock_fetching(&time_clock);
-             clock_gettime(CLOCK_MONOTONIC, &end_ts);
-             uint64_t rtt = (end_ts.tv_sec - begin_ts.tv_sec) * 1000000000 + end_ts.tv_nsec - begin_ts.tv_nsec;
-             printf("kvmclock sync RTT[%lu]\n", rtt);
-             time_clock += rtt / 2;
-             data.clock = time_clock;
-             printf("QEMU %d set kvmclock: %llu\n", local_cpu_start_index, data.clock);
-         }
+        if (local_cpus != smp_cpus && local_cpu_start_index != 0) {
+            struct timespec begin_ts, end_ts;
+            clock_gettime(CLOCK_MONOTONIC, &begin_ts);
+            kvmclock_fetching(&time_clock);
+            clock_gettime(CLOCK_MONOTONIC, &end_ts);
+            uint64_t rtt = (end_ts.tv_sec - begin_ts.tv_sec) * 1000000000 + end_ts.tv_nsec - begin_ts.tv_nsec;
+            printf("kvmclock sync RTT[%lu]\n", rtt);
+            time_clock += rtt / 2;
+            data.clock = time_clock;
+            printf("QEMU %d set kvmclock: %llu\n", local_cpu_start_index, data.clock);
+        }
 
         ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, &data);
         if (ret < 0) {
