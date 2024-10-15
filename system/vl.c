@@ -2904,7 +2904,7 @@ static void qemu_init_distributed(MachineState *ms)
                      local_cpu_start_index, local_cpus);
         exit(1);
     }
-    printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", ms->qemu_nums, ms->smp.cpus, ms->local_cpus);
+    // printf("QEMU nums: %d, Total CPU nums: %d, CPU per QEMU: %d\n", ms->qemu_nums, ms->smp.cpus, ms->local_cpus);
 }
 
 void qemu_init(int argc, char **argv)
@@ -3937,8 +3937,6 @@ void qemu_init(int argc, char **argv)
     }
     qemu_init_displays();
     accel_setup_post(current_machine);
-    printf("accel setup end\n");
-    fflush(stdout);
     os_setup_post();
     resume_mux_open();
 }
