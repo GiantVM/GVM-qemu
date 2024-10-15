@@ -874,6 +874,9 @@ void irq_forwarding(int cpu_index, int vector_num, int trigger_mode)
     MachineState *ms = MACHINE(qdev_get_machine());
     QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
 
+    printf("cpu_index:%d ,vector:%d, trigger:%d\n", cpu_index, vector_num, trigger_mode);
+    fflush(stdout);
+
     qemu_put_be16(io_connect_file, FIXED_INT);
     /* Indicate which CPU we want to forward this interrupt to */
     qemu_put_sbe32(io_connect_file, cpu_index);

@@ -64,6 +64,8 @@ static void cpu_interrupt_remote(CPUState *cpu, int mask)
     int cpu_index = cpu->cpu_index;
     MachineState *ms = MACHINE(qdev_get_machine());
     if (ms->local_cpus != ms->smp.cpus && !is_local_node(cpu_index)) {
+        printf("cpu int remote %d\n", cpu_index);
+        fflush(stdout);
         special_interrupt_forwarding(cpu_index, mask);
     }
     else {
@@ -317,6 +319,8 @@ static void apic_bus_deliver(const uint32_t *deliver_bitmask,
                              uint8_t trigger_mode)
 {
     APICCommonState *apic_iter;
+    printf("delivery:%d\n", delivery_mode);
+    fflush(stdout);
 
     switch (delivery_mode) {
         case APIC_DM_LOWPRI:
