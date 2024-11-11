@@ -3284,6 +3284,12 @@ int kvm_cpu_exec(CPUState *cpu)
 
         trace_kvm_run_exit(cpu->cpu_index, run->exit_reason);
         switch (run->exit_reason) {
+        case KVM_EXIT_DSM_SEND_IRQ:
+            printf("irq_val %d\n",run->lapic_irq.val);
+            fflush(stdout);
+            startup_forwarding(cpu->cpu_index,run->lapic_irq.val, run->lapic_irq.val2);
+            ret = 0;
+            break;
         case KVM_EXIT_IO:
             /* Called outside BQL */
             kvm_handle_io(run->io.port, attrs,
@@ -4571,6 +4577,20 @@ int kvm_create_guest_memfd(uint64_t size, uint64_t flags, Error **errp)
         error_setg_errno(errp, errno, "Error creating KVM guest_memfd");
         return -1;
     }
+
+    return fd;
+}
+
+int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2)
+{
+    int fd;
+    struct kvm_dipi_params dipi = {
+        .vcpu_id = cpu_index,
+        .val = val,
+        .val2 = val2,
+    };
+
+    fd = kvm_vm_ioctl(kvm_state, KVM_DSM_IPI, &dipi);
 
     return fd;
 }

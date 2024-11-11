@@ -92,7 +92,7 @@ void qemu_mutex_lock_impl(QemuMutex *mutex, const char *file, const int line)
     assert(mutex->initialized);
     qemu_mutex_pre_lock(mutex, file, line);
     err = pthread_mutex_lock(&mutex->lock);
-    if (err)
+    if (err) 
         error_exit(err, __func__);
     qemu_mutex_post_lock(mutex, file, line);
 }

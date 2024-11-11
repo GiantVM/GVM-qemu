@@ -90,7 +90,7 @@ static void apic_startup_remote(CPUState *cpu, int vector_num)
     int index = cpu->cpu_index;
     MachineState *ms = MACHINE(qdev_get_machine());
     if (ms->local_cpus != ms->smp.cpus && !is_local_node(index)) {
-        startup_forwarding(index, vector_num);
+        startup_forwarding(index, vector_num, 0);
     } else {
         apic_startup(cpu, vector_num);
     }

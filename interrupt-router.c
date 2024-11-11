@@ -153,6 +153,7 @@ static void *io_router_loop(void *arg)
 
     /* Interrupts */
     uint32_t val; /* LAPIC */
+    uint32_t val2;
     int mask; /* SPECIAL_INT */
     int vector_num; /* SIPI & FIXED_INT */
     int trigger_mode; /* FIXED_INT */
@@ -233,8 +234,17 @@ static void *io_router_loop(void *arg)
                 break;
             case SIPI:
                 /* Any CPU send to target CPUs of a multicast/broadcast of SIPI */
-                vector_num = qemu_get_sbe32(req_file);
-                apic_startup(current_cpu, vector_num);
+                val = qemu_get_sbe32(req_file);
+                val2 = qemu_get_sbe32(req_file);
+                int ret;
+                ret = kvm_dipi_forwarding(cpu_index, val, val2);
+                if (ret < 0) {
+                    printf("KVM DSM IPI fail");
+                    fflush(stdout);
+                }
+                // apic_startup(current_cpu, vector_num);
+                printf("iorouter SIPI handle val = %d\n", val);
+                fflush(stdout);
                 break;
             case INIT_LEVEL_DEASSERT:
                 /* Any CPU send to target CPUs of a multicast/broadcast of INIT Level De-assert */
@@ -658,6 +668,8 @@ void start_io_router(void)
     int size;
 
     MachineState *ms = MACHINE(qdev_get_machine());
+    qemu_mutex_init(&io_forwarding_mutex);
+    qemu_mutex_init(&ipi_mutex);
     if (ms->local_cpus == ms->smp.cpus) {
         return;
     }
@@ -673,8 +685,6 @@ void start_io_router(void)
     listen_req_files = (QEMUFile **)g_malloc0(size);
     listen_rsp_files = (QEMUFile **)g_malloc0(size);
 
-    qemu_mutex_init(&io_forwarding_mutex);
-    qemu_mutex_init(&ipi_mutex);
 
     qemu_thread_create(&(router.thread), "io-router-listener", qemu_io_router_thread_run,
                    &router, QEMU_THREAD_JOINABLE);
@@ -837,17 +847,23 @@ void special_interrupt_forwarding(int cpu_index, int mask)
 }
 
 /* @unicast: current CPU -> dest CPU (CPU No. cpu_index) */
-void startup_forwarding(int cpu_index, int vector_num)
+void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2)
 {
     qemu_mutex_lock(&io_forwarding_mutex);
     MachineState *ms = MACHINE(qdev_get_machine());
-    QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
+    QEMUFile *io_connect_file;
 
-    qemu_put_be16(io_connect_file, SIPI);
-    /* Indicate which CPU we want to forward this interrupt to */
-    qemu_put_sbe32(io_connect_file, cpu_index);
-    qemu_put_sbe32(io_connect_file, vector_num);
-    qemu_fflush(io_connect_file);
+      for (int i = 0; i < ms->qemu_nums; i++) {
+        io_connect_file = req_files[i];
+        if (io_connect_file) {
+            qemu_put_be16(io_connect_file, SIPI);
+            /* Indicate which CPU we want to forward this interrupt to */
+            qemu_put_sbe32(io_connect_file, cpu_index);
+            qemu_put_sbe32(io_connect_file, val);
+            qemu_put_sbe32(io_connect_file, val2);
+            qemu_fflush(io_connect_file);
+        }
+    }
 
     qemu_mutex_unlock(&io_forwarding_mutex);
 }
