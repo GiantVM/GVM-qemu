@@ -854,6 +854,9 @@ void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2)
     QEMUFile *io_connect_file;
 
       for (int i = 0; i < ms->qemu_nums; i++) {
+        if (i == (cpu_index / ms->local_cpus)) {
+            continue;
+        }
         io_connect_file = req_files[i];
         if (io_connect_file) {
             qemu_put_be16(io_connect_file, SIPI);
