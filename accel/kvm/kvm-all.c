@@ -3303,7 +3303,7 @@ int kvm_cpu_exec(CPUState *cpu)
             if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index != 0) {
                 /* MMIOs of APIC should be resolved in apic_io_ops
                  * Case 1: GPA is in [0xfee00000, 0xfeefffff], this is the
-                 * address space for MSIs, and APIC MMIO space resides in this
+                 * address space for MSIs, and IOAPIC MMIO space resides in this
                  * region by default
                  * Case 2: GPA is in [apicbase, apicbase + 0x1000], this is the
                  * configurable APIC MMIO space
