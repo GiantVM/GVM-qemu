@@ -71,6 +71,8 @@
 #include "exec/target_page.h"
 #include "trace.h"
 
+#include "interrupt-router.h"
+
 #include CONFIG_DEVICES
 
 //#define DEBUG_KVM
@@ -6094,6 +6096,7 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     int ret;
     bool ctx_invalid;
     KVMState *state;
+    MachineState *ms = MACHINE(qdev_get_machine());
 
     switch (run->exit_reason) {
     case KVM_EXIT_HLT:
@@ -6143,6 +6146,8 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         break;
     case KVM_EXIT_IOAPIC_EOI:
         ioapic_eoi_broadcast(run->eoi.vector);
+        if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index != 0)   
+            eoi_forwarding(run->eoi.vector);
         ret = 0;
         break;
     case KVM_EXIT_X86_BUS_LOCK:

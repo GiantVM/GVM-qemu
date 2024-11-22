@@ -34,6 +34,7 @@ void special_interrupt_forwarding(int cpu_index, int mask);
 void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2);
 void init_level_deassert_forwarding(int cpu_index);
 void irq_forwarding(int cpu_index, int vector_num, int trigger_mode);
+void ioapic_irq_forwarding(int irq, int level);
 void eoi_forwarding(int isrv);
 void shutdown_forwarding(void);
 void reset_forwarding(void);

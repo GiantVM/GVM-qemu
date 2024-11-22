@@ -102,6 +102,7 @@ enum forward_type {
     SIPI,
     INIT_LEVEL_DEASSERT,
     FIXED_INT,
+    IOAPIC_INI,
     IOAPIC,
     KVMCLOCK,
     /* IO_ROUTER_EXIT */
@@ -905,6 +906,25 @@ void irq_forwarding(int cpu_index, int vector_num, int trigger_mode)
 
     qemu_mutex_unlock(&io_forwarding_mutex);
 }
+
+void ioapic_irq_forwarding(int irq, int level)
+{
+    qemu_mutex_lock(&io_forwarding_mutex);
+    QEMUFile *io_connect_file = req_files[0];
+    MachineState *ms = MACHINE(qdev_get_machine());
+    for (int i = 1; i < ms->qemu_nums; i++) {
+        io_connect_file = req_files[i];
+        if (io_connect_file) {
+           qemu_put_be16(io_connect_file, IOAPIC_INI);
+           qemu_put_sbe32(io_connect_file, CPU_INDEX_ANY);
+           qemu_put_sbe32(io_connect_file, irq);
+           qemu_put_sbe32(io_connect_file, level);
+           qemu_fflush(io_connect_file);
+        }
+    }
+    qemu_mutex_unlock(&io_forwarding_mutex);
+}
+
 
 /* @unicast: AP -> BSP (i.e. QEMU[0]) */
 void eoi_forwarding(int isrv)

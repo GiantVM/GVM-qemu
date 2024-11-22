@@ -36,6 +36,8 @@
 #include "hw/i386/x86-iommu.h"
 #include "trace.h"
 
+#include "interrupt-router.h"
+
 #define APIC_DELIVERY_MODE_SHIFT 8
 #define APIC_POLARITY_SHIFT 14
 #define APIC_TRIG_MODE_SHIFT 15
@@ -95,6 +97,7 @@ static void ioapic_service(IOAPICCommonState *s)
     uint8_t i;
     uint32_t mask;
     uint64_t entry;
+    MachineState *ms = MACHINE(qdev_get_machine());
 
     for (i = 0; i < IOAPIC_NUM_PINS; i++) {
         mask = 1 << i;
@@ -124,8 +127,15 @@ static void ioapic_service(IOAPICCommonState *s)
                     if (info.trig_mode == IOAPIC_TRIGGER_EDGE) {
                         kvm_set_irq(kvm_state, i, 1);
                         kvm_set_irq(kvm_state, i, 0);
+                        if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index == 0) {
+                            ioapic_irq_forwarding(i, 1);
+                            ioapic_irq_forwarding(i, 0); 
+                        }
                     } else {
                         kvm_set_irq(kvm_state, i, 1);
+                        if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index == 0) {
+                            ioapic_irq_forwarding(i, 1);
+                        }
                     }
                     continue;
                 }
