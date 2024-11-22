@@ -201,7 +201,6 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
             printf("kvmclock sync RTT[%lu]\n", rtt);
             time_clock += rtt / 2;
             data.clock = time_clock;
-            printf("QEMU %d set kvmclock: %llu\n", local_cpu_start_index, data.clock);
         }
 
         ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, &data);

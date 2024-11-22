@@ -257,6 +257,10 @@ static void *io_router_loop(void *arg)
                 trigger_mode = qemu_get_sbe32(req_file);
                 apic_set_irq_detour(current_cpu, vector_num, trigger_mode);
                 break;
+            case IOAPIC_INI:
+                val = qemu_get_sbe32(req_file);
+                val2 = qemu_get_sbe32(req_file);
+                break;
             case IOAPIC:
                 /* AP forward to BSP */
                 isrv = qemu_get_sbe32(req_file);

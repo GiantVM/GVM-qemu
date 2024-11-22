@@ -128,12 +128,16 @@ static void ioapic_service(IOAPICCommonState *s)
                         kvm_set_irq(kvm_state, i, 1);
                         kvm_set_irq(kvm_state, i, 0);
                         if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index == 0) {
+                            if (!io_forwarding_mutex.initialized)
+                                continue;;
                             ioapic_irq_forwarding(i, 1);
                             ioapic_irq_forwarding(i, 0); 
                         }
                     } else {
                         kvm_set_irq(kvm_state, i, 1);
                         if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index == 0) {
+                            if (!io_forwarding_mutex.initialized)
+                                continue;;
                             ioapic_irq_forwarding(i, 1);
                         }
                     }

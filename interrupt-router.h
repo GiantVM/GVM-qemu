@@ -7,6 +7,7 @@
 #include "exec/hwaddr.h"
 
 extern QemuMutex ipi_mutex;
+extern QemuMutex io_forwarding_mutex;
 extern int pr_debug_log;
 
 int parse_cluster_iplist(const char *cluster_iplist);
