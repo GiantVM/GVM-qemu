@@ -3285,8 +3285,6 @@ int kvm_cpu_exec(CPUState *cpu)
         trace_kvm_run_exit(cpu->cpu_index, run->exit_reason);
         switch (run->exit_reason) {
         case KVM_EXIT_DSM_SEND_IRQ:
-            printf("irq_val %d\n",run->lapic_irq.val);
-            fflush(stdout);
             startup_forwarding(cpu->cpu_index,run->lapic_irq.val, run->lapic_irq.val2);
             ret = 0;
             break;
@@ -4591,6 +4589,15 @@ int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2)
     };
 
     fd = kvm_vm_ioctl(kvm_state, KVM_DSM_IPI, &dipi);
+
+    return fd;
+}
+
+int kvm_ioapic_irq_handle(int irq, int level)
+{
+    int fd;
+
+    fd = kvm_set_irq(kvm_state, irq, level);
 
     return fd;
 }

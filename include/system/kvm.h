@@ -580,4 +580,5 @@ int kvm_set_memory_attributes_shared(hwaddr start, uint64_t size);
 int kvm_convert_memory(hwaddr start, hwaddr size, bool to_private);
 
 int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2);
+int kvm_ioapic_irq_handle(int irq, int level);
 #endif

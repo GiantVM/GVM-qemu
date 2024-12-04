@@ -244,8 +244,6 @@ static void *io_router_loop(void *arg)
                     fflush(stdout);
                 }
                 // apic_startup(current_cpu, vector_num);
-                printf("iorouter SIPI handle val = %d\n", val);
-                fflush(stdout);
                 break;
             case INIT_LEVEL_DEASSERT:
                 /* Any CPU send to target CPUs of a multicast/broadcast of INIT Level De-assert */
@@ -260,6 +258,11 @@ static void *io_router_loop(void *arg)
             case IOAPIC_INI:
                 val = qemu_get_sbe32(req_file);
                 val2 = qemu_get_sbe32(req_file);
+                ret = kvm_ioapic_irq_handle(val, val2);
+                if (ret < 0) {
+                    printf("KVM ioapic int fail");
+                    fflush(stdout);
+                }
                 break;
             case IOAPIC:
                 /* AP forward to BSP */
