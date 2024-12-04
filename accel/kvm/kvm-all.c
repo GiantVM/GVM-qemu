@@ -3307,10 +3307,12 @@ int kvm_cpu_exec(CPUState *cpu)
                  * configurable APIC MMIO space
                  */
 
+                // if (((APIC_DEFAULT_ADDRESS <= run->mmio.phys_addr) &&
+                            // (run->mmio.phys_addr < APIC_DEFAULT_ADDRESS + APIC_SPACE_SIZE)) ||
+                        // (((apic->apicbase & MSR_IA32_APICBASE_BASE) <= run->mmio.phys_addr) &&
+                            // (run->mmio.phys_addr < ((apic->apicbase & MSR_IA32_APICBASE_BASE) + 0x1000)))) {
                 if (((APIC_DEFAULT_ADDRESS <= run->mmio.phys_addr) &&
-                            (run->mmio.phys_addr < APIC_DEFAULT_ADDRESS + APIC_SPACE_SIZE)) ||
-                        (((apic->apicbase & MSR_IA32_APICBASE_BASE) <= run->mmio.phys_addr) &&
-                            (run->mmio.phys_addr < ((apic->apicbase & MSR_IA32_APICBASE_BASE) + 0x1000)))) {
+                            (run->mmio.phys_addr < APIC_DEFAULT_ADDRESS + APIC_SPACE_SIZE))) {
                     address_space_rw(&address_space_memory,
                                      run->mmio.phys_addr, attrs,
                                      run->mmio.data,
@@ -3374,6 +3376,8 @@ int kvm_cpu_exec(CPUState *cpu)
             trace_kvm_run_exit_system_event(cpu->cpu_index, run->system_event.type);
             switch (run->system_event.type) {
             case KVM_SYSTEM_EVENT_SHUTDOWN:
+                printf("shutdown\n");
+                fflush(stdout);
                 qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
                 ret = EXCP_INTERRUPT;
                 break;
