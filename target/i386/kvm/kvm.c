@@ -6101,6 +6101,8 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     switch (run->exit_reason) {
     case KVM_EXIT_HLT:
         DPRINTF("handle_hlt\n");
+        printf("handle_hlt id %d\n", cs->cpu_index);
+        fflush(stdout);
         bql_lock();
         ret = kvm_handle_halt(cpu);
         bql_unlock();

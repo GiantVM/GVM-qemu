@@ -100,6 +100,8 @@ enum forward_type {
     LAPIC,
     SPECIAL_INT,
     SIPI,
+    X2APIC,
+    APIC_BASE,
     INIT_LEVEL_DEASSERT,
     FIXED_INT,
     IOAPIC_INI,
@@ -161,6 +163,11 @@ static void *io_router_loop(void *arg)
     int isrv; /* IOAPIC */
 
     uint64_t kvmclock;
+    __u64 x2data;
+
+    int host;
+    uint32_t base_index;
+    __u64 base_data;
 
     void *data;
     struct io_router_loop_arg *argp = (struct io_router_loop_arg *)arg;
@@ -233,17 +240,36 @@ static void *io_router_loop(void *arg)
                 mask = qemu_get_sbe32(req_file);
                 cpu_interrupt(current_cpu, mask);
                 break;
+            case X2APIC:
+                x2data = qemu_get_be64(req_file);
+                int ret = kvm_x2apic_handle(cpu_index, x2data);
+                // printf("kvm_x2apic_handle id %d data %llx\n", ret, x2data);
+                // fflush(stdout);
+                if (ret < 0) {
+                    printf("KVM DSM x2apic fail");
+                    fflush(stdout);
+                }
+                break;
             case SIPI:
                 /* Any CPU send to target CPUs of a multicast/broadcast of SIPI */
                 val = qemu_get_sbe32(req_file);
                 val2 = qemu_get_sbe32(req_file);
-                int ret;
                 ret = kvm_dipi_forwarding(cpu_index, val, val2);
                 if (ret < 0) {
                     printf("KVM DSM IPI fail");
                     fflush(stdout);
                 }
                 // apic_startup(current_cpu, vector_num);
+                break;
+            case APIC_BASE:
+                host = qemu_get_sbe32(req_file);
+                base_index = qemu_get_be32(req_file);
+                base_data = qemu_get_be64(req_file);
+                ret = kvm_apic_base_handle(cpu_index, host, base_index, base_data);
+                if (ret < 0) {
+                    printf("KVM DSM APIC_BASE fail");
+                    fflush(stdout);
+                }
                 break;
             case INIT_LEVEL_DEASSERT:
                 /* Any CPU send to target CPUs of a multicast/broadcast of INIT Level De-assert */
@@ -258,11 +284,7 @@ static void *io_router_loop(void *arg)
             case IOAPIC_INI:
                 val = qemu_get_sbe32(req_file);
                 val2 = qemu_get_sbe32(req_file);
-                ret = kvm_ioapic_irq_handle(val, val2);
-                if (ret < 0) {
-                    printf("KVM ioapic int fail");
-                    fflush(stdout);
-                }
+                kvm_ioapic_irq_handle(val, val2);
                 break;
             case IOAPIC:
                 /* AP forward to BSP */
@@ -727,7 +749,7 @@ void pio_forwarding(uint16_t port, MemTxAttrs attrs, void *data, int direction,
                  * indicate which cpu we are currently operating on, especially
                  * for apic_mem_readl / apic_mem_writel => cpu_get_current_apic
                  */
-                qemu_put_sbe32(io_connect_file, current_cpu->cpu_index);
+                qemu_put_sbe32(io_connect_file, CPU_INDEX_ANY);
                 qemu_put_be16(io_connect_file, port);
                 qemu_put_buffer(io_connect_file, (uint8_t *)&attrs, sizeof(attrs));
                 qemu_put_sbe32(io_connect_file, direction);
@@ -870,8 +892,56 @@ void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2)
             qemu_put_be16(io_connect_file, SIPI);
             /* Indicate which CPU we want to forward this interrupt to */
             qemu_put_sbe32(io_connect_file, cpu_index);
-            qemu_put_sbe32(io_connect_file, val);
-            qemu_put_sbe32(io_connect_file, val2);
+            qemu_put_be32(io_connect_file, val);
+            qemu_put_be32(io_connect_file, val2);
+            qemu_fflush(io_connect_file);
+        }
+    }
+
+    qemu_mutex_unlock(&io_forwarding_mutex);
+}
+
+void x2apic_forwarding(int cpu_index, __u64 data)
+{
+    qemu_mutex_lock(&io_forwarding_mutex);
+    MachineState *ms = MACHINE(qdev_get_machine());
+    QEMUFile *io_connect_file;
+
+    for (int i = 0; i < ms->qemu_nums; i++) {
+        if (i == (cpu_index / ms->local_cpus)) {
+            continue;
+        }
+        io_connect_file = req_files[i];
+        if (io_connect_file) {
+        qemu_put_be16(io_connect_file, X2APIC);
+        /* Indicate which CPU we want to forward this interrupt to */
+        qemu_put_sbe32(io_connect_file, cpu_index);
+        qemu_put_be64(io_connect_file, data);
+        qemu_fflush(io_connect_file);
+        }
+    }
+
+    qemu_mutex_unlock(&io_forwarding_mutex);
+}
+
+void apic_base_forwarding(int cpu_index, bool host, uint32_t index, __u64 data)
+{
+    qemu_mutex_lock(&io_forwarding_mutex);
+    MachineState *ms = MACHINE(qdev_get_machine());
+    QEMUFile *io_connect_file;
+
+    for (int i = 0; i < ms->qemu_nums; i++) {
+        if (i == (cpu_index / ms->local_cpus)) {
+            continue;
+        }
+        io_connect_file = req_files[i];
+        if (io_connect_file) {
+            qemu_put_be16(io_connect_file, APIC_BASE);
+            /* Indicate which CPU we want to forward this interrupt to */
+            qemu_put_sbe32(io_connect_file, cpu_index);
+            qemu_put_sbe32(io_connect_file, (int)host);
+            qemu_put_be32(io_connect_file, index);
+            qemu_put_be64(io_connect_file, data);
             qemu_fflush(io_connect_file);
         }
     }

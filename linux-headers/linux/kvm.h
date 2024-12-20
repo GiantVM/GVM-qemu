@@ -180,6 +180,8 @@ struct kvm_xen_exit {
 #define KVM_EXIT_MEMORY_FAULT     39
 #define KVM_EXIT_TDX              40
 #define KVM_EXIT_DSM_SEND_IRQ     41
+#define KVM_EXIT_DSM_X2_ICR       42
+#define KVM_EXIT_DSM_APIC_BASE    43
 
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
@@ -227,9 +229,22 @@ struct kvm_run {
 #endif
 	union {
 		struct {
+			__u32 id;
 			__u32 val;
 			__u32 val2;
 		} lapic_irq;
+		/* KVM_EXIT_DSM_X2APIC */
+		struct{
+			__u32 id;
+			__u64 data;
+		} x2apic;
+		/* KVM_EXIT_APIC_BASE */
+		struct {	
+			__u32 id;
+			bool host;
+			__u32 index;
+			__u64 data;
+		} x2msr_base;
 		/* KVM_EXIT_UNKNOWN */
 		struct {
 			__u64 hardware_exit_reason;
@@ -1328,6 +1343,22 @@ struct kvm_dipi_params {
 	__u32 val2;
 };
 #define KVM_DSM_IPI               _IOW(KVMIO, 0xf3, struct kvm_dipi_params)
+
+struct kvm_x2apic_params
+{
+	int vcpu_id;
+	__u64 data;
+};
+#define KVM_DSM_X2APIC 		      _IOW(KVMIO, 0xf4, struct kvm_x2apic_params)
+
+
+struct kvm_apic_base_params {
+    int vcpu_id;
+    bool host;
+    __u32 index;
+    __u64 data;
+};
+#define KVM_DSM_APIC_BASE         _IOW(KVMIO, 0xf5, struct kvm_apic_base_params)
 
 /*
  * ioctls for vcpu fds

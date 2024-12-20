@@ -2963,13 +2963,14 @@ static void do_kvm_cpu_synchronize_state(CPUState *cpu, run_on_cpu_data arg)
             cpu_dump_state(cpu, stderr, CPU_DUMP_CODE);
             vm_stop(RUN_STATE_INTERNAL_ERROR);
         }
-
         cpu->vcpu_dirty = true;
+        // printf("syn_state kvm_arch_get_registers index %d dirty %d\n", cpu->cpu_index, cpu->vcpu_dirty);
     }
 }
 
 void kvm_cpu_synchronize_state(CPUState *cpu)
 {
+    // printf("kvm_cpu_synchronize_state index %d dirty %d protected %d\n", cpu->cpu_index, cpu->vcpu_dirty, kvm_state->guest_state_protected);
     if (!cpu->vcpu_dirty && !kvm_state->guest_state_protected) {
         run_on_cpu(cpu, do_kvm_cpu_synchronize_state, RUN_ON_CPU_NULL);
     }
@@ -3196,7 +3197,7 @@ int kvm_cpu_exec(CPUState *cpu)
 {
     struct kvm_run *run = cpu->kvm_run;
     int ret, run_ret;
-    struct APICCommonState *apic = APIC_COMMON(X86_CPU(cpu)->apic_state);
+    // struct APICCommonState *apic = APIC_COMMON(X86_CPU(cpu)->apic_state);
     MachineState *ms = MACHINE(qdev_get_machine());
 
     trace_kvm_cpu_exec();
@@ -3284,8 +3285,17 @@ int kvm_cpu_exec(CPUState *cpu)
 
         trace_kvm_run_exit(cpu->cpu_index, run->exit_reason);
         switch (run->exit_reason) {
+        case KVM_EXIT_DSM_APIC_BASE:
+            apic_base_forwarding(run->x2msr_base.id, run->x2msr_base.host, run->x2msr_base.index, run->x2msr_base.data);
+            ret = 0;
+            break;
         case KVM_EXIT_DSM_SEND_IRQ:
-            startup_forwarding(cpu->cpu_index,run->lapic_irq.val, run->lapic_irq.val2);
+            startup_forwarding(run->lapic_irq.id, run->lapic_irq.val, run->lapic_irq.val2);
+            ret = 0;
+            break;
+        case KVM_EXIT_DSM_X2_ICR:
+            // printf("KVM_EXIT_DSM_X2_ICR id %d data %llx\n", run->x2apic.id, run->x2apic.data);
+            x2apic_forwarding(run->x2apic.id, run->x2apic.data);
             ret = 0;
             break;
         case KVM_EXIT_IO:
@@ -3340,6 +3350,7 @@ int kvm_cpu_exec(CPUState *cpu)
             break;
         case KVM_EXIT_SHUTDOWN:
             qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+            printf("kvm_exit_shutdown\n");
             ret = EXCP_INTERRUPT;
             break;
         case KVM_EXIT_UNKNOWN:
@@ -4583,6 +4594,20 @@ int kvm_create_guest_memfd(uint64_t size, uint64_t flags, Error **errp)
     return fd;
 }
 
+int kvm_x2apic_handle(int cpu_index, uint64_t data)
+{
+    int fd;
+    struct kvm_x2apic_params x2apic = {
+        .vcpu_id = cpu_index,
+        .data = data,
+    };
+
+    fd = kvm_vm_ioctl(kvm_state, KVM_DSM_X2APIC, &x2apic);
+
+    return fd;
+}
+
+
 int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2)
 {
     int fd;
@@ -4593,6 +4618,21 @@ int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2)
     };
 
     fd = kvm_vm_ioctl(kvm_state, KVM_DSM_IPI, &dipi);
+
+    return fd;
+}
+
+int kvm_apic_base_handle(int cpu_index, int host, uint32_t index, uint64_t data)
+{
+    int fd;
+    struct kvm_apic_base_params x2_base = {
+        .vcpu_id = cpu_index,
+        .host = (bool)host,
+        .index = index,
+        .data = data,
+    };
+
+    fd = kvm_vm_ioctl(kvm_state, KVM_DSM_APIC_BASE, &x2_base);
 
     return fd;
 }

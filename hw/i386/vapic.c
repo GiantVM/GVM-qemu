@@ -636,6 +636,37 @@ static int vapic_prepare(VAPICROMState *s)
     return 0;
 }
 
+
+#include <execinfo.h>
+
+void user_dump_stack(void);
+ 
+void user_dump_stack(void)
+{
+   int j, nptrs;
+   #define SIZE 100
+   void *buffer[100];
+   char **strings;
+ 
+   nptrs = backtrace(buffer, SIZE);
+   printf("backtrace() returned %d addresses\n", nptrs);
+ 
+   /* The call backtrace_symbols_fd(buffer, nptrs, STDOUT_FILENO)
+	  would produce similar output to the following: */
+ 
+   strings = backtrace_symbols(buffer, nptrs);
+   if (strings == NULL) {
+	   perror("backtrace_symbols");
+	   exit(EXIT_FAILURE);
+   }
+ 
+   for (j = 0; j < nptrs; j++)
+	   printf("%s\n", strings[j]);
+ 
+   free(strings);
+}
+
+
 static void vapic_write(void *opaque, hwaddr addr, uint64_t data,
                         unsigned int size)
 {
@@ -648,7 +679,15 @@ static void vapic_write(void *opaque, hwaddr addr, uint64_t data,
         return;
     }
 
-    cpu_synchronize_state(current_cpu);
+    if (current_cpu->local == 1) 
+        cpu_synchronize_state(current_cpu);
+    else {
+        CPUState *cs;
+        CPU_FOREACH(cs) {
+            if (cs->local) 
+                cpu_synchronize_state(cs);
+        }
+    }
     cpu = X86_CPU(current_cpu);
     env = &cpu->env;
 
