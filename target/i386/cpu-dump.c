@@ -349,6 +349,8 @@ void x86_cpu_dump_state(CPUState *cs, FILE *f, int flags)
     static const char *seg_name[6] = { "ES", "CS", "SS", "DS", "FS", "GS" };
 
     eflags = cpu_compute_eflags(env);
+    qemu_fprintf(f, "hflags=%08" PRIx32 " hflags2=%08" PRIx32 " a20_mask=%08" PRIx32 "\n",
+                 env->hflags, env->hflags2, env->a20_mask);
 #ifdef TARGET_X86_64
     if (env->hflags & HF_CS64_MASK) {
         qemu_fprintf(f, "RAX=%016" PRIx64 " RBX=%016" PRIx64 " RCX=%016" PRIx64 " RDX=%016" PRIx64 "\n"
