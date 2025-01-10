@@ -3349,9 +3349,11 @@ int kvm_cpu_exec(CPUState *cpu)
             ret = EXCP_INTERRUPT;
             break;
         case KVM_EXIT_SHUTDOWN:
-            qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+            // qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
             printf("kvm_exit_shutdown\n");
-            ret = EXCP_INTERRUPT;
+            cpu_stop_current();
+            ret = 0;
+            // ret = EXCP_INTERRUPT;
             break;
         case KVM_EXIT_UNKNOWN:
             fprintf(stderr, "KVM: unknown exit, hardware reason %" PRIx64 "\n",
