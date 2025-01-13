@@ -146,6 +146,30 @@ void hmp_cont(Monitor *mon, const QDict *qdict)
     hmp_handle_error(mon, err);
 }
 
+void hmp_stop_one_cpu(Monitor *mon, const QDict *qdict)
+{
+    int64_t cpu_index;
+
+    cpu_index = qdict_get_int(qdict, "index");
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+    if (cpu) {
+        cpu->stop = true;
+        cpu_pause(cpu);
+    }
+}
+
+void hmp_cont_one_cpu(Monitor *mon, const QDict *qdict)
+{
+    int64_t cpu_index;
+
+    cpu_index = qdict_get_int(qdict, "index");
+    CPUState *cpu = qemu_get_cpu(cpu_index);
+    if (cpu) {
+        cpu->stop = false;
+        cpu_resume(cpu);
+    }
+}
+
 void hmp_change(Monitor *mon, const QDict *qdict)
 {
     const char *device = qdict_get_str(qdict, "device");

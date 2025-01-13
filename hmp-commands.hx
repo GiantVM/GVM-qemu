@@ -425,6 +425,32 @@ SRST
 ERST
 
     {
+        .name       = "stopone|so",
+        .args_type  = "index:i",
+        .params     = "index",
+        .help       = "stop CPU",
+        .cmd        = hmp_stop_one_cpu,
+    },
+
+SRST
+``stopone`` *index* or ``so`` *index*
+  Stop the CPU.
+ERST
+
+    {
+        .name       = "contone|co",
+        .args_type  = "index:i",
+        .params     = "index",
+        .help       = "continue CPU",
+        .cmd        = hmp_cont_one_cpu,
+    },
+
+SRST
+``contone`` *index* or ``co`` *index*
+  Resume the CPU.
+ERST
+
+    {
         .name       = "system_wakeup",
         .args_type  = "",
         .params     = "",
