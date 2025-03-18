@@ -200,6 +200,7 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
             uint64_t rtt = (end_ts.tv_sec - begin_ts.tv_sec) * 1000000000 + end_ts.tv_nsec - begin_ts.tv_nsec;
             printf("kvmclock sync RTT[%lu]\n", rtt);
             time_clock += rtt / 2;
+            s->clock = time_clock;
             data.clock = time_clock;
         }
 
