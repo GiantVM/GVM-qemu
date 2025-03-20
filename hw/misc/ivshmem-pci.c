@@ -436,6 +436,7 @@ static void ivshmem_add_kvm_msi_virq(IVShmemState *s, int vector,
         error_setg(errp, "kvm_irqchip_add_msi_route failed");
         return;
     }
+    printf("ivshmem_add_kvm_msi_virq ret:%d\n", ret);
     kvm_irqchip_commit_route_changes(&c);
 
     s->msi_vectors[vector].virq = ret;

@@ -2061,10 +2061,12 @@ void kvm_irqchip_commit_routes(KVMState *s)
     int ret;
 
     if (kvm_gsi_direct_mapping()) {
+        printf("kvm_irqchip_commit_routes: direct mapping\n");
         return;
     }
 
     if (!kvm_gsi_routing_enabled()) {
+        printf("kvm_irqchip_commit_routes: routing not enabled\n");
         return;
     }
 
@@ -2414,9 +2416,38 @@ void kvm_irqchip_set_qemuirq_gsi(KVMState *s, qemu_irq irq, int gsi)
     g_hash_table_insert(s->gsimap, irq, GINT_TO_POINTER(gsi));
 }
 
+#include <execinfo.h>  // 包含 backtrace 相关函数
+void dump_stack(void);
+void dump_stack(void) {
+    void *buffer[128];
+    int num_entries = backtrace(buffer, 128);
+    char **symbols = backtrace_symbols(buffer, num_entries);
+
+    // 打开文件（追加模式）
+    FILE *fp = fopen("/home/xst/Desktop/all-in-vm/kai", "a");
+    if (!fp) {
+        // 若文件打开失败，回退到 stderr
+        fprintf(stderr, "Failed to open log file!\n");
+        fp = stderr;
+    }
+
+    // 写入堆栈信息到文件
+    fprintf(fp, "Call stack (most recent call first):\n");
+    for (int i = 0; i < num_entries; i++) {
+        fprintf(fp, "#%-2d %s\n", i, symbols[i]);
+    }
+
+        // 关闭文件并释放资源
+    if (fp != stderr) fclose(fp);
+
+    free(symbols);
+}
+
 static void kvm_irqchip_create(KVMState *s)
 {
+    // dump_stack();
     int ret;
+    printf("kvm_irqchip_create\n");
 
     assert(s->kernel_irqchip_split != ON_OFF_AUTO_AUTO);
     if (kvm_check_extension(s, KVM_CAP_IRQCHIP)) {
@@ -3308,26 +3339,16 @@ int kvm_cpu_exec(CPUState *cpu)
             ret = 0;
             break;
         case KVM_EXIT_MMIO:
+        //TODO: IO_APIC
             if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index != 0) {
-                /* MMIOs of APIC should be resolved in apic_io_ops
-                 * Case 1: GPA is in [0xfee00000, 0xfeefffff], this is the
-                 * address space for MSIs, and IOAPIC MMIO space resides in this
-                 * region by default
-                 * Case 2: GPA is in [apicbase, apicbase + 0x1000], this is the
-                 * configurable APIC MMIO space
-                 */
-
-                // if (((APIC_DEFAULT_ADDRESS <= run->mmio.phys_addr) &&
-                            // (run->mmio.phys_addr < APIC_DEFAULT_ADDRESS + APIC_SPACE_SIZE)) ||
-                        // (((apic->apicbase & MSR_IA32_APICBASE_BASE) <= run->mmio.phys_addr) &&
-                            // (run->mmio.phys_addr < ((apic->apicbase & MSR_IA32_APICBASE_BASE) + 0x1000)))) {
-                if (((APIC_DEFAULT_ADDRESS <= run->mmio.phys_addr) &&
-                            (run->mmio.phys_addr < APIC_DEFAULT_ADDRESS + APIC_SPACE_SIZE))) {
+                if ((0xfec00000 <= run->mmio.phys_addr) &&
+                            (run->mmio.phys_addr < (0xfec00000 + 0x1000))) {
                     address_space_rw(&address_space_memory,
                                      run->mmio.phys_addr, attrs,
                                      run->mmio.data,
                                      run->mmio.len,
                                      run->mmio.is_write);
+                    printf("kvm_exit_mmio remote_write ioapic\n");
                 } else {
                     mmio_forwarding(run->mmio.phys_addr, attrs,
                                  run->mmio.data,
@@ -3337,6 +3358,10 @@ int kvm_cpu_exec(CPUState *cpu)
             }
             else {
                 /* Called outside BQL */
+                if ( (0xfec00000 <= run->mmio.phys_addr) &&
+                            (run->mmio.phys_addr < (0xfec00000 + 0x1000))) {
+                    printf("kvm_exit_mmio local_write ioapic\n");
+                }
                 address_space_rw(&address_space_memory,
                                  run->mmio.phys_addr, attrs,
                                  run->mmio.data,

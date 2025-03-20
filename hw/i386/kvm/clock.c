@@ -180,6 +180,7 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
          * KVM_GET_CLOCK, read kvmclock value from memory.
          */
         if (!s->clock_is_reliable) {
+            printf("kvmclock_vm_state_change: s->clock_is_reliable is false\n");
             uint64_t pvclock_via_mem = kvmclock_current_nsec(s);
             /* We can't rely on the saved clock value, just discard it */
             if (pvclock_via_mem) {
@@ -198,11 +199,13 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
             kvmclock_fetching(&time_clock);
             clock_gettime(CLOCK_MONOTONIC, &end_ts);
             uint64_t rtt = (end_ts.tv_sec - begin_ts.tv_sec) * 1000000000 + end_ts.tv_nsec - begin_ts.tv_nsec;
-            printf("kvmclock sync RTT[%lu]\n", rtt);
+            printf("kvmclock sync time_clock[%lu] RTT[%lu]\n", time_clock, rtt);
             time_clock += rtt / 2;
             s->clock = time_clock;
             data.clock = time_clock;
         }
+
+        printf("QEMU %d set kvmclock: %llu\n", local_cpu_start_index, data.clock);
 
         ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, &data);
         if (ret < 0) {
@@ -239,7 +242,7 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
 uint64_t kvmclock_getclock(void) {
     struct kvm_clock_data data;
     int ret;
-    printf("enter kvmclock_getclock");
+    printf("enter kvmclock_getclock\n");
 
     /* kvm_synchronize_all_tsc(); */
 

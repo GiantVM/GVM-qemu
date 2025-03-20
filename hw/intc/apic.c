@@ -319,8 +319,7 @@ static void apic_bus_deliver(const uint32_t *deliver_bitmask,
                              uint8_t trigger_mode)
 {
     APICCommonState *apic_iter;
-    printf("delivery:%d\n", delivery_mode);
-    fflush(stdout);
+
 
     switch (delivery_mode) {
         case APIC_DM_LOWPRI:

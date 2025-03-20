@@ -30,7 +30,6 @@ void qemu_set_irq(qemu_irq irq, int level)
 {
     if (!irq)
         return;
-
     irq->handler(irq->opaque, irq->n, level);
 }
 

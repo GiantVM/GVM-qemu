@@ -77,6 +77,7 @@ static void serial_isa_realizefn(DeviceState *dev, Error **errp)
     index++;
 
     s->irq = isa_get_irq(isadev, isa->isairq);
+    printf("serial_irq %d\n", isa->isairq);
     qdev_realize(DEVICE(s), NULL, errp);
     qdev_set_legacy_instance_id(dev, isa->iobase, 3);
 

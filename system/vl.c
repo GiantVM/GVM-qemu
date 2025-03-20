@@ -2452,6 +2452,8 @@ static void configure_accelerators(const char *progname)
 {
     bool init_failed = false;
 
+    printf("configure_accelerators\n");
+
     qemu_opts_foreach(qemu_find_opts("icount"),
                       do_configure_icount, NULL, &error_fatal);
 

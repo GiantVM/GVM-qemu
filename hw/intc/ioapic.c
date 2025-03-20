@@ -209,6 +209,7 @@ static void ioapic_update_kvm_routes(IOAPICCommonState *s)
     int i;
 
     if (kvm_irqchip_is_split()) {
+        printf("ioapic_update_kvm_routes\n");
         for (i = 0; i < IOAPIC_NUM_PINS; i++) {
             MSIMessage msg;
             struct ioapic_entry_info info;
@@ -219,6 +220,7 @@ static void ioapic_update_kvm_routes(IOAPICCommonState *s)
                 kvm_irqchip_update_msi_route(kvm_state, i, msg, NULL);
             }
         }
+        // ioapic_router_forwarding();
         kvm_irqchip_commit_routes(kvm_state);
     }
 #endif
@@ -421,6 +423,7 @@ ioapic_mem_write(void *opaque, hwaddr addr, uint64_t val,
                 ioapic_fix_edge_remote_irr(&s->ioredtbl[index]);
                 ioapic_update_kvm_routes(s);
                 ioapic_service(s);
+                printf("ioapic_mem_write index[%d] val[%lu]\n", index, val);
             }
         }
         break;

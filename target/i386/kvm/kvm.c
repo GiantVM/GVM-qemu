@@ -6246,6 +6246,7 @@ void kvm_arch_init_irq_routing(KVMState *s)
     kvm_gsi_routing_allowed = true;
 
     if (kvm_irqchip_is_split()) {
+        printf("kvm_arch_init_irq_routing\n");
         KVMRouteChange c = kvm_irqchip_begin_route_changes(s);
         int i;
 

@@ -107,6 +107,7 @@ enum forward_type {
     IOAPIC_INI,
     IOAPIC,
     KVMCLOCK,
+    INI_ROUTER,
     /* IO_ROUTER_EXIT */
     SHUTDOWN,
     RESET,
@@ -243,8 +244,6 @@ static void *io_router_loop(void *arg)
             case X2APIC:
                 x2data = qemu_get_be64(req_file);
                 int ret = kvm_x2apic_handle(cpu_index, x2data);
-                // printf("kvm_x2apic_handle id %d data %llx\n", ret, x2data);
-                // fflush(stdout);
                 if (ret < 0) {
                     printf("KVM DSM x2apic fail");
                     fflush(stdout);
@@ -284,12 +283,19 @@ static void *io_router_loop(void *arg)
             case IOAPIC_INI:
                 val = qemu_get_sbe32(req_file);
                 val2 = qemu_get_sbe32(req_file);
+                if (val != 4) {
+                    printf("ioapic_ini val[%u] val2[%u]\n", val, val2);
+                }
                 kvm_ioapic_irq_handle(val, val2);
                 break;
             case IOAPIC:
                 /* AP forward to BSP */
                 isrv = qemu_get_sbe32(req_file);
                 ioapic_eoi_broadcast(isrv);
+                break;
+
+            case INI_ROUTER:
+                /* BSP forward to AP */
                 break;
 
             case KVMCLOCK:
