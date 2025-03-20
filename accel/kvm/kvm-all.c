@@ -2072,6 +2072,9 @@ void kvm_irqchip_commit_routes(KVMState *s)
 
     s->irq_routes->flags = 0;
     trace_kvm_irqchip_commit_routes();
+    if (io_forwarding_mutex.initialized) {
+        ioapic_router_forwarding(s->irq_routes);
+    }
     ret = kvm_vm_ioctl(s, KVM_SET_GSI_ROUTING, s->irq_routes);
     assert(ret == 0);
 }
@@ -3341,20 +3344,20 @@ int kvm_cpu_exec(CPUState *cpu)
         case KVM_EXIT_MMIO:
         //TODO: IO_APIC
             if (ms->local_cpus != ms->smp.cpus && ms->local_cpu_start_index != 0) {
-                if ((0xfec00000 <= run->mmio.phys_addr) &&
-                            (run->mmio.phys_addr < (0xfec00000 + 0x1000))) {
-                    address_space_rw(&address_space_memory,
-                                     run->mmio.phys_addr, attrs,
-                                     run->mmio.data,
-                                     run->mmio.len,
-                                     run->mmio.is_write);
-                    printf("kvm_exit_mmio remote_write ioapic\n");
-                } else {
+                // if ((0xfec00000 <= run->mmio.phys_addr) &&
+                //             (run->mmio.phys_addr < (0xfec00000 + 0x1000))) {
+                //     address_space_rw(&address_space_memory,
+                //                      run->mmio.phys_addr, attrs,
+                //                      run->mmio.data,
+                //                      run->mmio.len,
+                //                      run->mmio.is_write);
+                //     printf("kvm_exit_mmio remote_write ioapic\n");
+                // } else {
                     mmio_forwarding(run->mmio.phys_addr, attrs,
                                  run->mmio.data,
                                  run->mmio.len,
                                  run->mmio.is_write);
-                }
+                // }
             }
             else {
                 /* Called outside BQL */
@@ -4672,3 +4675,13 @@ int kvm_ioapic_irq_handle(int irq, int level)
 
     return fd;
 }
+
+int kvm_ioapic_router_handle(struct kvm_irq_routing *routing)
+{
+    int fd;
+
+    fd = kvm_vm_ioctl(kvm_state, KVM_SET_GSI_ROUTING, routing);
+
+    return fd;
+}
+

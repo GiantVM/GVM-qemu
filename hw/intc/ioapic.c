@@ -220,7 +220,6 @@ static void ioapic_update_kvm_routes(IOAPICCommonState *s)
                 kvm_irqchip_update_msi_route(kvm_state, i, msg, NULL);
             }
         }
-        // ioapic_router_forwarding();
         kvm_irqchip_commit_routes(kvm_state);
     }
 #endif

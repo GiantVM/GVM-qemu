@@ -296,6 +296,42 @@ static void *io_router_loop(void *arg)
 
             case INI_ROUTER:
                 /* BSP forward to AP */
+                uint32_t nr = qemu_get_be32(req_file);   
+                uint32_t flags = qemu_get_be32(req_file); 
+
+                struct kvm_irq_routing *routing = malloc(sizeof(*routing) + nr * sizeof(struct kvm_irq_routing_entry));
+                routing->nr = nr;
+                routing->flags = flags;
+
+                for (int i = 0; i < nr; i++) {
+                    struct kvm_irq_routing_entry *entry = &(routing->entries[i]);
+                    entry->gsi = qemu_get_be32(req_file);
+                    entry->type = qemu_get_be32(req_file);
+                    entry->flags = qemu_get_be32(req_file);
+                    entry->pad = qemu_get_be32(req_file);  
+
+                    switch (entry->type) {
+                    case KVM_IRQ_ROUTING_IRQCHIP: {
+                        entry->u.irqchip.irqchip = qemu_get_be32(req_file);
+                        entry->u.irqchip.pin = qemu_get_be32(req_file);
+                        break;
+                        }
+                    case KVM_IRQ_ROUTING_MSI: {
+                        entry->u.msi.address_lo = qemu_get_be32(req_file);
+                        entry->u.msi.address_hi = qemu_get_be32(req_file);
+                        entry->u.msi.data = qemu_get_be32(req_file);
+                        entry->u.msi.pad = qemu_get_be32(req_file);
+                        break;
+                        }
+                    default:
+                        printf("unknown router type[%u]\n", entry->type);
+                        exit(1);
+                    }
+                }
+                kvm_ioapic_router_handle(routing);
+                qemu_put_be32(rsp_file, 99);
+                qemu_fflush(rsp_file);
+                free(routing);
                 break;
 
             case KVMCLOCK:
@@ -1008,6 +1044,50 @@ void ioapic_irq_forwarding(int irq, int level)
     qemu_mutex_unlock(&io_forwarding_mutex);
 }
 
+void ioapic_router_forwarding(struct kvm_irq_routing *routing) {
+    qemu_mutex_lock(&io_forwarding_mutex);
+    QEMUFile *io_connect_file = req_files[1];
+    
+    qemu_put_be16(io_connect_file, INI_ROUTER);
+    qemu_put_sbe32(io_connect_file, CPU_INDEX_ANY);
+    qemu_put_be32(io_connect_file, routing->nr);     
+    qemu_put_be32(io_connect_file, routing->flags);  
+
+    for (int i = 0; i < routing->nr; i++) {
+        struct kvm_irq_routing_entry *entry = &(routing->entries[i]);
+
+        qemu_put_be32(io_connect_file, entry->gsi);
+        qemu_put_be32(io_connect_file, entry->type);
+        qemu_put_be32(io_connect_file, entry->flags);
+        qemu_put_be32(io_connect_file, entry->pad); 
+
+        switch (entry->type) {
+            case KVM_IRQ_ROUTING_IRQCHIP: {
+                struct kvm_irq_routing_irqchip *irq = &(entry->u.irqchip);
+                qemu_put_be32(io_connect_file, irq->irqchip); 
+                qemu_put_be32(io_connect_file, irq->pin);
+                break;
+            }
+            case KVM_IRQ_ROUTING_MSI: {
+                struct kvm_irq_routing_msi *msi = &(entry->u.msi);
+                qemu_put_be32(io_connect_file, msi->address_lo);
+                qemu_put_be32(io_connect_file, msi->address_hi);
+                qemu_put_be32(io_connect_file, msi->data);
+                qemu_put_be32(io_connect_file, msi->pad);
+                break;
+            }
+            default:
+                fprintf(stderr, "Unsupported routing type: %d\n", entry->type);
+                break;
+        }
+    }
+
+    qemu_fflush(io_connect_file); 
+    io_connect_file = rsp_files[1];
+    while(qemu_get_be32(io_connect_file) != 99) {
+    }
+    qemu_mutex_unlock(&io_forwarding_mutex);
+}
 
 /* @unicast: AP -> BSP (i.e. QEMU[0]) */
 void eoi_forwarding(int isrv)

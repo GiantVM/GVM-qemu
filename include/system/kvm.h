@@ -583,4 +583,6 @@ int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2);
 int kvm_ioapic_irq_handle(int irq, int level);
 int kvm_x2apic_handle(int cpu_index, uint64_t data);
 int kvm_apic_base_handle(int cpu_index, int host, uint32_t index, uint64_t data);
+struct kvm_irq_routing;
+int kvm_ioapic_router_handle(struct kvm_irq_routing *routing);
 #endif

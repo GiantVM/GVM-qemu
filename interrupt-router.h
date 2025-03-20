@@ -5,6 +5,7 @@
 #include "exec/memattrs.h"
 #include "io/channel-socket.h"
 #include "exec/hwaddr.h"
+#include "linux/kvm.h"
 
 extern QemuMutex ipi_mutex;
 extern QemuMutex io_forwarding_mutex;
@@ -38,7 +39,7 @@ void apic_base_forwarding(int cpu_index, bool host, uint32_t index, __u64 data);
 void init_level_deassert_forwarding(int cpu_index);
 void irq_forwarding(int cpu_index, int vector_num, int trigger_mode);
 void ioapic_irq_forwarding(int irq, int level);
-// void ioapic_router_forwarding();
+void ioapic_router_forwarding(struct kvm_irq_routing *routing);
 void eoi_forwarding(int isrv);
 void shutdown_forwarding(void);
 void reset_forwarding(void);
