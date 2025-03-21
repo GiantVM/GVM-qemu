@@ -283,9 +283,6 @@ static void *io_router_loop(void *arg)
             case IOAPIC_INI:
                 val = qemu_get_sbe32(req_file);
                 val2 = qemu_get_sbe32(req_file);
-                if (val != 4) {
-                    printf("ioapic_ini val[%u] val2[%u]\n", val, val2);
-                }
                 kvm_ioapic_irq_handle(val, val2);
                 break;
             case IOAPIC:

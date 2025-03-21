@@ -3361,10 +3361,6 @@ int kvm_cpu_exec(CPUState *cpu)
             }
             else {
                 /* Called outside BQL */
-                if ( (0xfec00000 <= run->mmio.phys_addr) &&
-                            (run->mmio.phys_addr < (0xfec00000 + 0x1000))) {
-                    printf("kvm_exit_mmio local_write ioapic\n");
-                }
                 address_space_rw(&address_space_memory,
                                  run->mmio.phys_addr, attrs,
                                  run->mmio.data,
