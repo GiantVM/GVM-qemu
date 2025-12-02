@@ -3186,7 +3186,7 @@ MemTxResult address_space_read(AddressSpace *as, hwaddr addr,
             l = len;
             mr = flatview_translate(fv, addr, &addr1, &l, false, attrs);
             if (len == l && memory_access_is_direct(mr, false, attrs) &&
-                (!kvm_enabled() || local_cpus == smp.cpus || shm_path != NULL || is_local_shm())) {
+                (!kvm_enabled() || local_cpus == smp_cpus || shm_path != NULL)) {
                 ptr = qemu_map_ram_ptr(mr->ram_block, addr1);
                 memcpy(buf, ptr, len);
             } else {

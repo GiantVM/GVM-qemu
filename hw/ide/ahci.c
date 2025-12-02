@@ -35,7 +35,7 @@
 
 #include "trace.h"
 
-int kvm_vm_ioctl(KVMState *s, int type, ...);
+// int kvm_vm_ioctl(KVMState *s, int type, ...);
 #include <linux/kvm.h>
 
 static void check_cmd(AHCIState *s, int port);
