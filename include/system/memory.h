@@ -3149,8 +3149,8 @@ static inline bool memory_access_is_direct(MemoryRegion *mr, bool is_write,
     return true;
 }
 
-#include "sysemu/kvm.h"
-#include "sysemu/sysemu.h"
+#include "system/kvm.h"
+#include "system/system.h"
 
 extern int local_cpus;
 extern int smp_cpus;

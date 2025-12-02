@@ -1,7 +1,7 @@
 #include "qemu/osdep.h"
 #include <linux/kvm.h>
 
-#include "sysemu/sysemu.h"
+#include "system/system.h"
 
 #include "qapi/error.h"
 #include "qemu/error-report.h"
