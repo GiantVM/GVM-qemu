@@ -211,7 +211,7 @@ static int hash_prepare_direct_iov(AspeedHACEState *s, struct iovec *iov,
     src = hash_get_source_addr(s);
     trace_aspeed_hace_hash_addr("src", src);
     haddr = address_space_map(&s->dram_as, src, &plen, false,
-                              MEMTXATTRS_UNSPECIFIED);
+                              MEMTXATTRS_UNSPECIFIED, true, NULL);
     if (haddr == NULL) {
         qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: Unable to map address, addr=0x%" HWADDR_PRIx
@@ -347,7 +347,7 @@ static void hash_write_digest_and_unmap_iov(AspeedHACEState *s,
     for (; iov_idx > 0; iov_idx--) {
         address_space_unmap(&s->dram_as, iov[iov_idx - 1].iov_base,
                             iov[iov_idx - 1].iov_len, false,
-                            iov[iov_idx - 1].iov_len);
+                            iov[iov_idx - 1].iov_len, true);
     }
 }
 
