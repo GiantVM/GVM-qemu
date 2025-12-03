@@ -66,7 +66,7 @@
 #include "trace.h"
 #include "sev.h"
 #include "interrupt-router.h"
-#include "exec/ramblock.h"
+#include "system/ramblock.h"
 #include CONFIG_DEVICES
 
 #ifdef CONFIG_XEN_EMU

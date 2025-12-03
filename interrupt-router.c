@@ -13,8 +13,8 @@
 #include "hw/i386/kvm/clock.h"
 #include "hw/core/cpu.h"
 
-#include "include/exec/memory.h"
-#include "exec/address-spaces.h"
+#include "include/system/memory.h"
+#include "system/address-spaces.h"
 
 #include "interrupt-router.h"
 #include "qom/object_interfaces.h"

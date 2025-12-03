@@ -41,6 +41,7 @@
 #include "hw/boards.h"
 #include "system/xen.h"
 #include "system/kvm.h"
+#include "linux-headers/linux/kvm.h"
 #include "system/tcg.h"
 #include "system/qtest.h"
 #include "qemu/timer.h"
