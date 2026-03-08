@@ -111,6 +111,8 @@ static uint64_t kvm_supported_memory_attributes;
 static bool kvm_guest_memfd_supported;
 static hwaddr kvm_max_slot_size = ~0;
 
+static int qemu_forward_count = 0;
+
 static const KVMCapabilityInfo kvm_required_capabilites[] = {
     KVM_CAP_INFO(USER_MEMORY),
     KVM_CAP_INFO(DESTROY_MEMORY_REGION_WORKS),
@@ -3324,7 +3326,10 @@ int kvm_cpu_exec(CPUState *cpu)
             ret = 0;
             break;
         case KVM_EXIT_DSM_SEND_IRQ:
-            startup_forwarding(run->lapic_irq.id, run->lapic_irq.val, run->lapic_irq.val2);
+            qemu_forward_count++;
+            startup_forwarding(run->lapic_irq.id, run->lapic_irq.val, run->lapic_irq.val2, run->lapic_irq.dest_id);
+            memset(&run->lapic_irq, 0, sizeof(run->lapic_irq));
+            run->exit_reason = 0;
             ret = 0;
             break;
         case KVM_EXIT_DSM_X2_ICR:
@@ -4634,13 +4639,14 @@ int kvm_x2apic_handle(int cpu_index, uint64_t data)
 }
 
 
-int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2)
+int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2, uint32_t dest_id)
 {
     int fd;
     struct kvm_dipi_params dipi = {
         .vcpu_id = cpu_index,
         .val = val,
         .val2 = val2,
+        .dest_id = dest_id,
     };
 
     fd = kvm_vm_ioctl(kvm_state, KVM_DSM_IPI, &dipi);

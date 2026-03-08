@@ -158,6 +158,7 @@ static void *io_router_loop(void *arg)
     /* Interrupts */
     uint32_t val; /* LAPIC */
     uint32_t val2;
+    uint32_t dest_id;
     int mask; /* SPECIAL_INT */
     int vector_num; /* SIPI & FIXED_INT */
     int trigger_mode; /* FIXED_INT */
@@ -253,7 +254,8 @@ static void *io_router_loop(void *arg)
                 /* Any CPU send to target CPUs of a multicast/broadcast of SIPI */
                 val = qemu_get_sbe32(req_file);
                 val2 = qemu_get_sbe32(req_file);
-                ret = kvm_dipi_forwarding(cpu_index, val, val2);
+                dest_id = qemu_get_be32(req_file);
+                ret = kvm_dipi_forwarding(cpu_index, val, val2, dest_id);
                 if (ret < 0) {
                     printf("KVM DSM IPI fail");
                     fflush(stdout);
@@ -916,7 +918,7 @@ void special_interrupt_forwarding(int cpu_index, int mask)
 }
 
 /* @unicast: current CPU -> dest CPU (CPU No. cpu_index) */
-void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2)
+void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2, uint32_t dest_id)
 {
     qemu_mutex_lock(&io_forwarding_mutex);
     MachineState *ms = MACHINE(qdev_get_machine());
@@ -933,6 +935,7 @@ void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2)
             qemu_put_sbe32(io_connect_file, cpu_index);
             qemu_put_be32(io_connect_file, val);
             qemu_put_be32(io_connect_file, val2);
+            qemu_put_be32(io_connect_file, dest_id);
             qemu_fflush(io_connect_file);
         }
     }

@@ -179,9 +179,9 @@ struct kvm_xen_exit {
 #define KVM_EXIT_LOONGARCH_IOCSR  38
 #define KVM_EXIT_MEMORY_FAULT     39
 #define KVM_EXIT_TDX              40
-#define KVM_EXIT_DSM_SEND_IRQ     41
-#define KVM_EXIT_DSM_X2_ICR       42
-#define KVM_EXIT_DSM_APIC_BASE    43
+#define KVM_EXIT_DSM_SEND_IRQ     45
+#define KVM_EXIT_DSM_X2_ICR       43
+#define KVM_EXIT_DSM_APIC_BASE    44
 
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
@@ -232,6 +232,7 @@ struct kvm_run {
 			__u32 id;
 			__u32 val;
 			__u32 val2;
+			__u32 dest_id;
 		} lapic_irq;
 		/* KVM_EXIT_DSM_X2APIC */
 		struct{
@@ -972,7 +973,7 @@ struct kvm_enable_cap {
 #define KVM_CAP_ARM_EL2 240
 #define KVM_CAP_ARM_EL2_E2H0 241
 #define KVM_CAP_RISCV_MP_STATE_RESET 242
-#define KVM_CAP_X86_DSM 243
+#define KVM_CAP_X86_DSM 245
 
 struct kvm_irq_routing_irqchip {
 	__u32 irqchip;
@@ -1341,6 +1342,7 @@ struct kvm_dipi_params {
 	int vcpu_id;
 	__u32 val;
 	__u32 val2;
+	__u32 dest_id;
 };
 #define KVM_DSM_IPI               _IOW(KVMIO, 0xf3, struct kvm_dipi_params)
 
