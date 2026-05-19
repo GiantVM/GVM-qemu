@@ -973,7 +973,7 @@ struct kvm_enable_cap {
 #define KVM_CAP_ARM_EL2 240
 #define KVM_CAP_ARM_EL2_E2H0 241
 #define KVM_CAP_RISCV_MP_STATE_RESET 242
-#define KVM_CAP_X86_DSM 245
+#define KVM_CAP_X86_DSM 249
 
 struct kvm_irq_routing_irqchip {
 	__u32 irqchip;
