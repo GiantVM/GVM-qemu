@@ -838,14 +838,18 @@ void pc_memory_init(PCMachineState *pcms,
     hwaddr maxphysaddr, maxusedaddr;
     hwaddr cxl_base, cxl_resv_end = 0;
     X86CPU *cpu = X86_CPU(first_cpu);
+#if 0
+    /* DSM disabled on the share-memory branch. */
     struct kvm_dsm_params params;
+#endif
 
     assert(machine->ram_size == x86ms->below_4g_mem_size +
                                 x86ms->above_4g_mem_size);
 
     linux_boot = (machine->kernel_filename != NULL);
 
-    /* Start DSM */
+#if 0
+    /* Start DSM: disabled on the share-memory branch. */
     if (machine->local_cpus != machine->smp.cpus && !machine->shm_path) {
         if (kvm_enabled() && kvm_check_extension(kvm_state, KVM_CAP_X86_DSM)) {
             params.dsm_index = machine->local_cpu_start_index / machine->local_cpus;
@@ -862,6 +866,7 @@ void pc_memory_init(PCMachineState *pcms,
             exit(EXIT_FAILURE);
         }
     }
+#endif
 
     /*
      * The HyperTransport range close to the 1T boundary is unique to AMD

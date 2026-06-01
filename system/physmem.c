@@ -2278,24 +2278,39 @@ RAMBlock *qemu_ram_alloc(ram_addr_t size, uint32_t ram_flags,
     return qemu_ram_alloc_internal(size, size, NULL, NULL, ram_flags, mr, errp);
 }
 
-RAMBlock *qemu_ram_alloc_shmem(ram_addr_t size, uint32_t ram_flags, 
+RAMBlock *qemu_ram_alloc_shmem(ram_addr_t size, uint32_t ram_flags,
                                MemoryRegion *mr, const char *shm_path,
                                Error **errp)
 {
-    int fd = shm_open(shm_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    int fd = open(shm_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
     if (fd == -1) {
+        fprintf(stderr, "[shm] open(%s) failed: %s\n", shm_path, strerror(errno));
         goto err;
     }
-    if (ftruncate(fd, size) == -1) {
-        shm_unlink(shm_path);
-        goto err;
+    fprintf(stderr, "[shm] open ok, fd=%d\n", fd);
+
+    struct stat st;
+    fstat(fd, &st);
+    if (!S_ISBLK(st.st_mode)) {
+        if (ftruncate(fd, size) == -1) {
+            fprintf(stderr, "[shm] ftruncate(%zu) failed: %s\n",
+                    (size_t)size, strerror(errno));
+            close(fd);
+            goto err;
+        }
+        fprintf(stderr, "[shm] ftruncate ok\n");
+    } else {
+        fprintf(stderr, "[shm] block device, skip ftruncate\n");
     }
+
     void *host = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);  // mmap 后 fd 可以关掉
     if (host == MAP_FAILED) {
-        shm_unlink(shm_path);
+        fprintf(stderr, "[shm] mmap failed: %s\n", strerror(errno));
         goto err;
     }
-    /* size_t align = QEMU_VMALLOC_ALIGN; */
+    fprintf(stderr, "[shm] mmap ok, host=%p size=%zu\n", host, (size_t)size);
+
     return qemu_ram_alloc_from_ptr(size, host, mr, errp);
 
 err:
@@ -2997,10 +3012,12 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
         return result;
     } else {
         /* RAM case */
-        int ret;
         uint8_t *ram_ptr = qemu_ram_ptr_length(mr->ram_block, mr_addr, l,
                                                false, true);
 
+#if 0
+        /* DSM memcpy path disabled on the share-memory branch. */
+        int ret;
         MachineState *ms = MACHINE(qdev_get_machine());
         if (kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
                 struct kvm_dsm_memcpy cpy = {
@@ -3014,7 +3031,9 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
                     fprintf(stderr, "KVM_DSM_MEMCPY failed %d\n", ret);
                 }
             }
-            else {
+            else
+#endif
+            {
                 memmove(ram_ptr, buf, *l);
             }
         invalidate_and_set_dirty(mr, mr_addr, *l);
@@ -3109,7 +3128,9 @@ static MemTxResult flatview_read_continue_step(MemTxAttrs attrs, uint8_t *buf,
         uint8_t *ram_ptr = qemu_ram_ptr_length(mr->ram_block, mr_addr, l,
                                                false, false);
 
-        MachineState *ms = MACHINE(qdev_get_machine());                                       
+#if 0
+        /* DSM memcpy path disabled on the share-memory branch. */
+        MachineState *ms = MACHINE(qdev_get_machine());
         if (kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
                 int ret;
                 struct kvm_dsm_memcpy cpy = {
@@ -3123,7 +3144,9 @@ static MemTxResult flatview_read_continue_step(MemTxAttrs attrs, uint8_t *buf,
                     fprintf(stderr, "KVM_DSM_MEMCPY failed %d\n", ret);
                 }
             }
-            else {
+            else
+#endif
+            {
                 memcpy(buf, ram_ptr, *l);
             }
 
@@ -3474,7 +3497,10 @@ void *address_space_map(AddressSpace *as,
     MemoryRegion *mr;
     FlatView *fv;
     void *ptr;
+#if 0
+    /* DSM mempin path disabled on the share-memory branch. */
     MachineState *ms = MACHINE(qdev_get_machine());
+#endif
 
     trace_address_space_map(as, addr, len, is_write, *(uint32_t *) &attrs);
 
@@ -3532,6 +3558,8 @@ void *address_space_map(AddressSpace *as,
     fuzz_dma_read_cb(addr, *plen, mr);
     ptr = qemu_ram_ptr_length(mr->ram_block, xlat, plen, true, is_write);
 
+#if 0
+    /* DSM mempin path disabled on the share-memory branch. */
     if (is_dsm && kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path)
         *is_dsm = true;
 
@@ -3548,6 +3576,7 @@ void *address_space_map(AddressSpace *as,
             fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
         }
     }
+#endif
 
     return ptr;
 }
@@ -3561,8 +3590,10 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
 {
     MemoryRegion *mr;
     ram_addr_t addr1;
-    /* GiantVM changes */
+#if 0
+    /* DSM mempin path disabled on the share-memory branch. */
     MachineState *ms = MACHINE(qdev_get_machine());
+#endif
 
     mr = memory_region_from_host(buffer, &addr1);
     if (mr != NULL) {
@@ -3572,6 +3603,8 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
         if (xen_enabled()) {
             xen_invalidate_map_cache_entry(buffer);
         }
+#if 0
+        /* DSM mempin path disabled on the share-memory branch. */
         if (kvm_enabled() && dsm_unpin && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
             int ret;
             struct kvm_dsm_mempin pin = {
@@ -3585,6 +3618,7 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
                 fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
             }
         }
+#endif
         memory_region_unref(mr);
         return;
     }

@@ -4627,6 +4627,8 @@ int kvm_create_guest_memfd(uint64_t size, uint64_t flags, Error **errp)
 
 int kvm_x2apic_handle(int cpu_index, uint64_t data)
 {
+#if 1
+    /* DSM APIC forwarding disabled on the share-memory branch. */
     int fd;
     struct kvm_x2apic_params x2apic = {
         .vcpu_id = cpu_index,
@@ -4636,11 +4638,17 @@ int kvm_x2apic_handle(int cpu_index, uint64_t data)
     fd = kvm_vm_ioctl(kvm_state, KVM_DSM_X2APIC, &x2apic);
 
     return fd;
+#endif
+    (void)cpu_index;
+    (void)data;
+    return 0;
 }
 
 
 int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2, uint32_t dest_id)
 {
+#if 1
+    /* DSM IPI forwarding disabled on the share-memory branch. */
     int fd;
     struct kvm_dipi_params dipi = {
         .vcpu_id = cpu_index,
@@ -4652,10 +4660,18 @@ int kvm_dipi_forwarding(int cpu_index, uint32_t val, uint32_t val2, uint32_t des
     fd = kvm_vm_ioctl(kvm_state, KVM_DSM_IPI, &dipi);
 
     return fd;
+#endif
+    (void)cpu_index;
+    (void)val;
+    (void)val2;
+    (void)dest_id;
+    return 0;
 }
 
 int kvm_apic_base_handle(int cpu_index, int host, uint32_t index, uint64_t data)
 {
+#if 1
+    /* DSM APIC-base forwarding disabled on the share-memory branch. */
     int fd;
     struct kvm_apic_base_params x2_base = {
         .vcpu_id = cpu_index,
@@ -4667,6 +4683,12 @@ int kvm_apic_base_handle(int cpu_index, int host, uint32_t index, uint64_t data)
     fd = kvm_vm_ioctl(kvm_state, KVM_DSM_APIC_BASE, &x2_base);
 
     return fd;
+#endif
+    (void)cpu_index;
+    (void)host;
+    (void)index;
+    (void)data;
+    return 0;
 }
 
 int kvm_ioapic_irq_handle(int irq, int level)

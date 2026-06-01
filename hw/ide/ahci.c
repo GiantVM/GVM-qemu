@@ -773,7 +773,7 @@ static void ahci_write_fis_sdb(AHCIState *s, NCQTransferState *ncq_tfs)
         return;
     }
 
-    if (ad->res_fis_is_dsm) {
+    if (false && ad->res_fis_is_dsm) { /* DSM disabled */
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
             fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
@@ -809,7 +809,7 @@ static void ahci_write_fis_sdb(AHCIState *s, NCQTransferState *ncq_tfs)
         ahci_trigger_irq(s, ad, AHCI_PORT_IRQ_BIT_SDBS);
     }
 
-    if (ad->res_fis_is_dsm) {
+    if (false && ad->res_fis_is_dsm) { /* DSM disabled */
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
@@ -836,7 +836,7 @@ static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
         return;
     }
 
-    if (ad->res_fis_is_dsm) {
+    if (false && ad->res_fis_is_dsm) { /* DSM disabled */
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
             fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
@@ -875,7 +875,7 @@ static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_TFES);
     }
 
-    if (ad->res_fis_is_dsm) {
+    if (false && ad->res_fis_is_dsm) { /* DSM disabled */
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
@@ -903,7 +903,7 @@ static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
         return false;
     }
 
-    if (ad->res_fis_is_dsm) {
+    if (false && ad->res_fis_is_dsm) { /* DSM disabled */
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
             fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
@@ -942,7 +942,7 @@ static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_DHRS);
     }
 
-    if (ad->res_fis_is_dsm) {
+    if (false && ad->res_fis_is_dsm) { /* DSM disabled */
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
@@ -1410,7 +1410,7 @@ static void handle_cmd(AHCIState *s, int port, uint8_t slot)
         return;
     }
 
-    if (s->dev[port].lst_is_dsm) {
+    if (false && s->dev[port].lst_is_dsm) { /* DSM disabled */
         pin.write = true;
         pin.unpin = false;
         pin.host_virt_addr = (__u64)cmd;
@@ -1453,7 +1453,7 @@ out:
                      cmd_len);
 
 done:
-    if (s->dev[port].lst_is_dsm) {
+    if (false && s->dev[port].lst_is_dsm) { /* DSM disabled */
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
@@ -1484,7 +1484,7 @@ static void ahci_pio_transfer(const IDEDMA *dma)
         .length = 32,
     };
 
-    if (ad->lst_is_dsm) {
+    if (false && ad->lst_is_dsm) { /* DSM disabled */
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
             fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
@@ -1539,7 +1539,7 @@ out:
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_PSS);
     }
 
-    if (ad->lst_is_dsm) {
+    if (false && ad->lst_is_dsm) { /* DSM disabled */
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
@@ -1596,7 +1596,7 @@ static int32_t ahci_dma_prepare_buf(const IDEDMA *dma, int32_t limit)
         .length = 32,
     };
 
-    if (ad->lst_is_dsm) {
+    if (false && ad->lst_is_dsm) { /* DSM disabled */
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (r < 0) {
             fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
@@ -1615,7 +1615,7 @@ static int32_t ahci_dma_prepare_buf(const IDEDMA *dma, int32_t limit)
 
     ret = s->io_buffer_size;
 done:
-    if (ad->lst_is_dsm) {
+    if (false && ad->lst_is_dsm) { /* DSM disabled */
         pin.unpin = true;
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (r < 0) {
@@ -1642,7 +1642,7 @@ static void ahci_commit_buf(const IDEDMA *dma, uint32_t tx_bytes)
         .length = 32,
     };
 
-    if (ad->lst_is_dsm) {
+    if (false && ad->lst_is_dsm) { /* DSM disabled */
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
             fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
@@ -1652,7 +1652,7 @@ static void ahci_commit_buf(const IDEDMA *dma, uint32_t tx_bytes)
     tx_bytes += le32_to_cpu(ad->cur_cmd->status);
     ad->cur_cmd->status = cpu_to_le32(tx_bytes);
 
-    if (ad->lst_is_dsm) {
+    if (false && ad->lst_is_dsm) { /* DSM disabled */
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
@@ -1676,7 +1676,7 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
         .length = 32,
     };
 
-    if (ad->lst_is_dsm) {
+    if (false && ad->lst_is_dsm) { /* DSM disabled */
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (r < 0) {
             fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
@@ -1702,7 +1702,7 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
 
     ret = 1;
 done:
-    if (ad->lst_is_dsm) {
+    if (false && ad->lst_is_dsm) { /* DSM disabled */
         pin.unpin = true;
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (r < 0) {
@@ -1949,7 +1949,7 @@ static int ahci_state_post_load(void *opaque, int version_id)
             if (!ncq_tfs->cmdh) {
                 return -1;
             }
-            if (ad->lst_is_dsm) {
+            if (false && ad->lst_is_dsm) { /* DSM disabled */
                 pin.host_virt_addr = (__u64)ncq_tfs->cmdh;
                 pin.unpin = false;
                 ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
@@ -1961,7 +1961,7 @@ static int ahci_state_post_load(void *opaque, int version_id)
                                  ncq_tfs->cmdh,
                                  ncq_tfs->sector_count * BDRV_SECTOR_SIZE,
                                  0);
-            if (ad->lst_is_dsm) {
+            if (false && ad->lst_is_dsm) { /* DSM disabled */
                 pin.unpin = true;
                 ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
                 if (ret < 0) {
