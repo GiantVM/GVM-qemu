@@ -1,12 +1,24 @@
-# GiantVM QEMU Guide
+# GiantVM QEMU
 
 GiantVM is a many-to-one virtualization framework built atop the QEMU/KVM hypervisor that consolidates multiple physical servers into a unified virtual machine
-
 Our core technical approach provides a Single System Image without requiring any modifications to the Guest OS or userspace applications.
 
-This guide describes how to obtain GiantVM QEMU sources and build QEMU
+## Introduction
 
-## 1. Obtain the GiantVM QEMU Source
+The `main` branch hosts the DSM (Distributed Shared Memory) version of GiantVM, which can be evaluated over TCP/IP.
+
+The `shared-memory` branch hosts our code that utilizes shared memory as the underlying communication and memory access mechanism for GiantVM.
+
+To boot GiantVM, a dedicated GiantVM kernel is also required.
+
+```text
+https://github.com/GiantVM/GVM-kernel
+```
+
+## Installation
+
+
+### Step 1. Obtain the GiantVM QEMU Source
 
 Clone the GiantVM QEMU repository from GitHub:
 
@@ -14,8 +26,8 @@ Clone the GiantVM QEMU repository from GitHub:
 git clone https://github.com/GiantVM/GVM-qemu.git
 ```
 
+### Step 2. Build GiantVM QEMU
 
-## 2. Build GiantVM QEMU
 
 The following packages are required for compilation. Install them as needed:
 
@@ -56,11 +68,3 @@ After the build completes, verify that the x86_64 QEMU binary was generated:
 ```
 
 The expected output is `QEMU emulator version 10.1.2`
-
-## 3. Obtain the GiantVM Kernel
-
-To boot GiantVM, a dedicated GiantVM kernel is also required.
-
-```text
-https://github.com/GiantVM/GVM-kernel
-```
