@@ -51,3 +51,11 @@ After the build completes, verify that the x86_64 QEMU binary was generated:
 ```
 
 The expected output is `QEMU emulator version 10.1.2`
+
+## 3. Obtain the GiantVM Kernel
+
+To boot GiantVM, a dedicated GiantVM kernel is also required.
+
+```text
+https://github.com/GiantVM/GVM-kernel
+```
