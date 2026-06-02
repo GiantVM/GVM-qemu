@@ -58,5 +58,5 @@ The expected output is `QEMU emulator version 10.1.2`
 To boot GiantVM, a dedicated GiantVM kernel is also required.
 
 ```text
-https://github.com/GiantVM/GVM-kernel
+https://github.com/GiantVM/GVM-kernel/tree/shared-memory
 ```
