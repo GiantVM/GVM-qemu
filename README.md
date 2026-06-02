@@ -1,3 +1,5 @@
+# GiantVM QEMU Guide
+
 This guide describes how to obtain GiantVM QEMU sources and build QEMU
 
 ## 1. Obtain the GiantVM QEMU Source
@@ -6,7 +8,6 @@ Clone the GiantVM QEMU repository from GitHub:
 
 ```bash
 git clone https://github.com/GiantVM/GVM-qemu.git
-cd GVM-qemu
 ```
 
 
