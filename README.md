@@ -8,7 +8,6 @@ Clone the GiantVM QEMU repository from GitHub:
 
 ```bash
 git clone https://github.com/GiantVM/GVM-qemu.git
-cd GVM-qemu
 ```
 
 
