@@ -1,5 +1,9 @@
 # GiantVM QEMU Guide
 
+GiantVM is a many-to-one virtualization framework built atop the QEMU/KVM hypervisor that consolidates multiple physical servers into a unified virtual machine
+
+Our core technical approach provides a Single System Image without requiring any modifications to the Guest OS or userspace applications.
+
 This guide describes how to obtain GiantVM QEMU sources and build QEMU
 
 ## 1. Obtain the GiantVM QEMU Source
