@@ -55,7 +55,19 @@ The expected output is `QEMU emulator version 10.1.2`
 
 ### Optional Static Package
 
-From the QEMU source directory, build a static runtime separately:
+Download the prebuilt `gvm-qemu-shm-v10.1.2.tar.gz` package, containing
+the static `qemu-system-x86_64` binary and matching `pc-bios` directory:
+
+[Download from Google Drive](https://drive.google.com/file/d/1yRLeaSt6bTpN0dokyPKuxynHH-OSZa1u/view?usp=sharing)
+
+```bash
+tar -xzf /path/to/gvm-qemu-shm-v10.1.2.tar.gz
+cd gvm-qemu-shm-v10.1.2
+./qemu-system-x86_64 --version
+ls pc-bios
+```
+
+Alternatively, build the static runtime from the QEMU source directory:
 
 ```bash
 mkdir -p build-static
