@@ -246,8 +246,9 @@ static void *io_router_loop(void *arg)
                 x2data = qemu_get_be64(req_file);
                 int ret = kvm_x2apic_handle(cpu_index, x2data);
                 if (ret < 0) {
-                    printf("KVM DSM x2apic fail");
-                    fflush(stdout);
+                    error_report("KVM DSM x2APIC injection for vCPU %d "
+                                 "failed: %s",
+                                 cpu_index, strerror(-ret));
                 }
                 break;
             case SIPI:
@@ -257,8 +258,8 @@ static void *io_router_loop(void *arg)
                 dest_id = qemu_get_be32(req_file);
                 ret = kvm_dipi_forwarding(cpu_index, val, val2, dest_id);
                 if (ret < 0) {
-                    printf("KVM DSM IPI fail");
-                    fflush(stdout);
+                    error_report("KVM DSM IPI injection for vCPU %d failed: %s",
+                                 cpu_index, strerror(-ret));
                 }
                 // apic_startup(current_cpu, vector_num);
                 break;
@@ -268,8 +269,9 @@ static void *io_router_loop(void *arg)
                 base_data = qemu_get_be64(req_file);
                 ret = kvm_apic_base_handle(cpu_index, host, base_index, base_data);
                 if (ret < 0) {
-                    printf("KVM DSM APIC_BASE fail");
-                    fflush(stdout);
+                    error_report("KVM DSM APIC base update for vCPU %d "
+                                 "failed: %s",
+                                 cpu_index, strerror(-ret));
                 }
                 break;
             case INIT_LEVEL_DEASSERT:
