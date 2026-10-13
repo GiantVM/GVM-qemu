@@ -72,11 +72,11 @@ cd build-static
 make -jN qemu-system-x86_64
 file qemu-system-x86_64
 cd ..
-mkdir -p ../gvm-qemu-shared-memory-v10.1.2
-cp build-static/qemu-system-x86_64 ../gvm-qemu-shared-memory-v10.1.2/
-cp -a pc-bios ../gvm-qemu-shared-memory-v10.1.2/
-tar -czf ../gvm-qemu-shared-memory-v10.1.2.tar.gz \
-    -C .. gvm-qemu-shared-memory-v10.1.2
+mkdir -p ../gvm-qemu-shm-v10.1.2
+cp build-static/qemu-system-x86_64 ../gvm-qemu-shm-v10.1.2/
+cp -a pc-bios ../gvm-qemu-shm-v10.1.2/
+tar -czf ../gvm-qemu-shm-v10.1.2.tar.gz \
+    -C .. gvm-qemu-shm-v10.1.2
 ```
 
 The `file` output should include `statically linked` or `static-pie linked`.
