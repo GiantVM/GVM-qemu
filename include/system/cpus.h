@@ -42,7 +42,7 @@ void cpu_synchronize_all_post_init(void);
 void cpu_synchronize_all_pre_loadvm(void);
 
 /* for remote cpu */
-void qemu_cond_wait_remote(void);
+void qemu_cond_wait_remote(unsigned int *generation);
 void qemu_cond_signal_remote(void);
 void qemu_cond_broadcast_remote(void);
 void qemu_mutex_lock_remote(void);

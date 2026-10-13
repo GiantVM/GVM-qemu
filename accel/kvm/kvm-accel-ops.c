@@ -59,22 +59,26 @@ static void *kvm_vcpu_thread_fn(void *arg)
         } while (!cpu->unplug || cpu_can_run(cpu));
     }
     else {
+        unsigned int wake_generation = 0;
+
         printf("CPU %d is remote CPU, pause\n", cpu->cpu_index);
         bql_unlock();
         /* use a new lock since qemu_global_mutex may cause deadlock */
         qemu_mutex_lock_remote();
         while (1) {
-            qemu_cond_wait_remote();
-            remote_cpu_count_dec();
+            qemu_cond_wait_remote(&wake_generation);
             if (qemu_shutdown_requested_get()) {
                 cpu->stopped = true;
+                remote_cpu_count_dec();
                 break;
             }
             if (qemu_reset_requested_get()) {
                 cpu->stopped = true;
             }
+            remote_cpu_count_dec();
         }
         qemu_mutex_unlock_remote();
+        bql_lock();
     }
 
     kvm_destroy_vcpu(cpu);
