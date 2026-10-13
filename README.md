@@ -7,7 +7,7 @@ Our core technical approach provides a Single System Image without requiring any
 
 The `main` branch hosts the DSM (Distributed Shared Memory) version of GiantVM, which can be evaluated over TCP/IP.
 
-The `shared-memory` branch hosts our code that utilizes shared memory as the underlying communication and memory access mechanism for GiantVM.
+The `shared-memory/v10.1.2` branch hosts our code that utilizes shared memory as the underlying communication and memory access mechanism for GiantVM.
 
 To boot GiantVM, a dedicated GiantVM kernel is also required.
 
@@ -115,7 +115,7 @@ the ioctl payload layouts. The QEMU 10.1.2 version string alone does not
 identify this ABI.
 
 The shared-memory pair instead uses GVM-kernel `shared-memory/v7.2-rc2`
-and GVM-qemu `shared-memory`. Its interrupt capability is 250 and its
+and GVM-qemu `shared-memory/v10.1.2`. Its interrupt capability is 250 and its
 unified exit reason is 44. QEMU enables that capability explicitly and
 decodes `dsm_irq_forward`, rather than the legacy APIC-base payload.
 
