@@ -75,7 +75,8 @@ static QemuMutex bql;
 static const AccelOpsClass *cpus_accel;
 
 /* used in wait remote */
-int wait_remote_cpu_count = 0;
+static int wait_remote_cpu_count;
+static unsigned int remote_cpu_wake_generation;
 
 bool cpu_is_stopped(CPUState *cpu)
 {
@@ -423,6 +424,7 @@ static QemuCond qemu_pause_cond;
 
 /* mutex and cond for remote cpu */
 static QemuCond qemu_remote_cpu_cond;
+static QemuCond qemu_remote_cpu_ack_cond;
 static QemuMutex qemu_remote_mutex;
 
 void qemu_init_cpu_loop(void)
@@ -433,6 +435,7 @@ void qemu_init_cpu_loop(void)
     qemu_mutex_init(&bql);
 
     qemu_cond_init(&qemu_remote_cpu_cond);
+    qemu_cond_init(&qemu_remote_cpu_ack_cond);
     qemu_mutex_init(&qemu_remote_mutex);
 
     qemu_thread_get_self(&io_thread);
@@ -913,9 +916,12 @@ void qmp_inject_nmi(Error **errp)
 }
 
 /* for remote cpu */
-void qemu_cond_wait_remote(void)
+void qemu_cond_wait_remote(unsigned int *generation)
 {
-    qemu_cond_wait(&qemu_remote_cpu_cond, &qemu_remote_mutex);
+    while (*generation == remote_cpu_wake_generation) {
+        qemu_cond_wait(&qemu_remote_cpu_cond, &qemu_remote_mutex);
+    }
+    *generation = remote_cpu_wake_generation;
 }
 
 void qemu_cond_signal_remote(void)
@@ -940,16 +946,23 @@ void qemu_mutex_unlock_remote(void)
 
 void remote_cpu_count_dec(void)
 {
-    wait_remote_cpu_count--;
+    assert(wait_remote_cpu_count > 0);
+    if (--wait_remote_cpu_count == 0) {
+        qemu_cond_signal(&qemu_remote_cpu_ack_cond);
+    }
 }
 
-void wakeup_remote_cpu(void) {
-    qemu_cond_broadcast(&qemu_remote_cpu_cond);
+void wakeup_remote_cpu(void)
+{
     MachineState *ms = MACHINE(qdev_get_machine());
+
+    qemu_mutex_lock_remote();
     wait_remote_cpu_count = ms->smp.cpus - ms->local_cpus;
+    remote_cpu_wake_generation++;
+    qemu_cond_broadcast_remote();
     while (wait_remote_cpu_count > 0) {
-        /* wait all remote cpu thread to change CPU status */
-        /* Need to do: use cond to improve */
+        qemu_cond_wait(&qemu_remote_cpu_ack_cond, &qemu_remote_mutex);
     }
+    qemu_mutex_unlock_remote();
 }
 
