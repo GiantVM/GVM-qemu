@@ -109,6 +109,7 @@ static int kvm_sstep_flags;
 static bool kvm_immediate_exit;
 static uint64_t kvm_supported_memory_attributes;
 static bool kvm_guest_memfd_supported;
+static bool kvm_dsm_irq_forward_enabled;
 static hwaddr kvm_max_slot_size = ~0;
 
 static int qemu_forward_count = 0;
@@ -2813,6 +2814,19 @@ static int kvm_init(AccelState *as, MachineState *ms)
         goto err;
     }
 
+    if (ms->local_cpus != ms->smp.cpus &&
+        kvm_check_extension(s, KVM_CAP_X86_DSM_IRQ_FORWARD) > 0) {
+        ret = kvm_vm_enable_cap(s, KVM_CAP_X86_DSM_IRQ_FORWARD, 0);
+        if (ret < 0) {
+            error_report("Cannot enable DSM IRQ forwarding: %s",
+                         strerror(-ret));
+            goto err;
+        }
+        kvm_dsm_irq_forward_enabled = true;
+        fprintf(stderr, "GVM: enabled unified DSM IRQ forwarding ABI "
+                        "(cap 250)\n");
+    }
+
     kvm_supported_memory_attributes = kvm_vm_check_extension(s, KVM_CAP_MEMORY_ATTRIBUTES);
     kvm_guest_memfd_supported =
         kvm_check_extension(s, KVM_CAP_GUEST_MEMFD) &&
@@ -3321,6 +3335,44 @@ int kvm_cpu_exec(CPUState *cpu)
 
         trace_kvm_run_exit(cpu->cpu_index, run->exit_reason);
         switch (run->exit_reason) {
+        case KVM_EXIT_DSM_IRQ_FORWARD:
+            if (!kvm_dsm_irq_forward_enabled) {
+                error_report("Unexpected unified DSM IRQ forwarding exit");
+                ret = -1;
+                break;
+            }
+            /* The unified ABI defers both local and remote delivery. */
+            switch (run->dsm_irq_forward.type) {
+            case KVM_DSM_IRQ_FORWARD_XAPIC_ICR:
+                ret = kvm_dipi_forwarding(run->dsm_irq_forward.vcpu_id,
+                                          run->dsm_irq_forward.val,
+                                          run->dsm_irq_forward.val2,
+                                          run->dsm_irq_forward.dest_id);
+                if (ret >= 0) {
+                    startup_forwarding(run->dsm_irq_forward.vcpu_id,
+                                       run->dsm_irq_forward.val,
+                                       run->dsm_irq_forward.val2,
+                                       run->dsm_irq_forward.dest_id);
+                }
+                break;
+            case KVM_DSM_IRQ_FORWARD_X2APIC_ICR:
+                ret = kvm_x2apic_handle(run->dsm_irq_forward.vcpu_id,
+                                       run->dsm_irq_forward.data);
+                if (ret >= 0) {
+                    x2apic_forwarding(run->dsm_irq_forward.vcpu_id,
+                                     run->dsm_irq_forward.data);
+                }
+                break;
+            default:
+                error_report("Unknown DSM IRQ forwarding type %u",
+                             run->dsm_irq_forward.type);
+                ret = -1;
+                break;
+            }
+            if (ret < 0) {
+                error_report("DSM IRQ injection failed: %s", strerror(-ret));
+            }
+            break;
         case KVM_EXIT_DSM_APIC_BASE:
             apic_base_forwarding(run->x2msr_base.id, run->x2msr_base.host, run->x2msr_base.index, run->x2msr_base.data);
             ret = 0;
