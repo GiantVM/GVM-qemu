@@ -51,39 +51,47 @@ QemuMutex io_forwarding_mutex;
 
 int parse_cluster_iplist(const char *cluster_iplist)
 {
-    int ret = 0, ip_num = 0, i;
+    GPtrArray *hosts;
+    gchar **tokens;
+    int i;
 
     if (cluster_iplist == NULL) {
-        ret = -EINVAL;
-        goto out;
+        return -EINVAL;
     }
 
-    for (i = 0; cluster_iplist[i] != '\0'; i++) {
-        if (isspace(cluster_iplist[i]))
-            ip_num++;
-        else if (!(isdigit(cluster_iplist[i]) || cluster_iplist[i] == '.')) {
-            ret = -EINVAL;
-            goto out;
+    if (router_hosts != NULL) {
+        return -EALREADY;
+    }
+
+    hosts = g_ptr_array_new_with_free_func(g_free);
+    tokens = g_strsplit_set(cluster_iplist, " \t\n\r\v\f", -1);
+
+    for (i = 0; tokens[i] != NULL; i++) {
+        struct in_addr address;
+
+        if (tokens[i][0] == '\0') {
+            continue;
         }
+
+        if (inet_pton(AF_INET, tokens[i], &address) != 1) {
+            g_strfreev(tokens);
+            g_ptr_array_free(hosts, TRUE);
+            return -EINVAL;
+        }
+
+        g_ptr_array_add(hosts, g_strdup(tokens[i]));
     }
-    router_hosts_num = ++ip_num;
 
-    router_hosts = (char **)g_malloc0(sizeof(char *) * ip_num);
+    g_strfreev(tokens);
 
-    char *temp_iplist = (char *)g_malloc(strlen(cluster_iplist) + 1);
-    strcpy(temp_iplist, cluster_iplist);
-    char *parse_ip = strtok(temp_iplist, " ");
-    i = 0;
-    while (parse_ip != NULL) {
-        char *ip = (char *)g_malloc(20);
-        strcpy(ip, parse_ip);
-        router_hosts[i++] = ip;
-        parse_ip = strtok(NULL, " ");
+    if (hosts->len == 0) {
+        g_ptr_array_free(hosts, TRUE);
+        return -EINVAL;
     }
-    g_free(temp_iplist);
 
-out:
-    return ret;
+    router_hosts_num = hosts->len;
+    router_hosts = (char **)g_ptr_array_free(hosts, FALSE);
+    return 0;
 }
 
 char **get_cluster_iplist(uint32_t *len)
@@ -1181,4 +1189,3 @@ void kvmclock_fetching(uint64_t *kvmclock)
     *kvmclock = qemu_get_be64(io_connect_return_file);
     qemu_mutex_unlock(&io_forwarding_mutex);
 }
-

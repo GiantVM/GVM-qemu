@@ -23,15 +23,15 @@ DEF("local-cpu", HAS_ARG, QEMU_OPTION_local_cpu,
     "-local-cpu [cpus=]n[,start=start][,iplist=\"ip1[ ip2]...\"]\n"
     "                set the number of local CPUs to 'n' [default=1]\n"
     "                start= the start index of local CPUs\n"
-    "                iplist= ip of each node hosting the distributed VM\n",
+    "                iplist= IPv4 address of each node hosting the distributed VM\n",
         QEMU_ARCH_ALL)
 SRST
 ``-local-cpu [cpus=]n[,start=start][,iplist=\"ip1[ ip2]...\"]``
     Enable the distributed QEMU feature. CPUs are divided into two groups, local
     and remote respectively. CPUs from @var{start} to (@var{start} + @var{n} - 1)
-    are local, while others are remote. @var{iplist} is the IP of each node of the
-    distributed VM. Currently, the local CPU number on each node must be the same,
-    otherwise the guest would not start.
+    are local, while others are remote. @var{iplist} is a whitespace-separated list
+    of IPv4 addresses, one for each node of the distributed VM. Currently, the local
+    CPU number on each node must be the same, otherwise the guest would not start.
 ERST
 
 
