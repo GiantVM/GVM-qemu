@@ -2824,7 +2824,7 @@ static int kvm_init(AccelState *as, MachineState *ms)
         }
         kvm_dsm_irq_forward_enabled = true;
         fprintf(stderr, "GVM: enabled unified DSM IRQ forwarding ABI "
-                        "(cap 250)\n");
+                        "(cap 253)\n");
     }
 
     kvm_supported_memory_attributes = kvm_vm_check_extension(s, KVM_CAP_MEMORY_ATTRIBUTES);

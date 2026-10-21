@@ -7,7 +7,7 @@ This guide describes how to obtain GiantVM QEMU sources and build QEMU
 Clone the GiantVM QEMU repository from GitHub:
 
 ```bash
-git clone --branch shared-memory/v10.1.2 https://github.com/GiantVM/GVM-qemu.git
+git clone --branch shared-memory/v10.1.2-linux-v7.3 https://github.com/GiantVM/GVM-qemu.git
 ```
 
 
@@ -55,19 +55,9 @@ The expected output is `QEMU emulator version 10.1.2`
 
 ### Optional Static Package
 
-Download the prebuilt `gvm-qemu-shm-v10.1.2.tar.gz` package, containing
-the static `qemu-system-x86_64` binary and matching `pc-bios` directory:
-
-[Download from Google Drive](https://drive.google.com/file/d/1yRLeaSt6bTpN0dokyPKuxynHH-OSZa1u/view?usp=sharing)
-
-```bash
-tar -xzf /path/to/gvm-qemu-shm-v10.1.2.tar.gz
-cd gvm-qemu-shm-v10.1.2
-./qemu-system-x86_64 --version
-ls pc-bios
-```
-
-Alternatively, build the static runtime from the QEMU source directory:
+Build the static runtime from this branch. The earlier Google Drive
+package targets Linux 7.2-rc2 and uses capability 250; it cannot enable
+forwarding on the Linux 7.3 host, which uses capability 253.
 
 ```bash
 mkdir -p build-static
@@ -84,11 +74,11 @@ cd build-static
 make -jN qemu-system-x86_64
 file qemu-system-x86_64
 cd ..
-mkdir -p ../gvm-qemu-shm-v10.1.2
-cp build-static/qemu-system-x86_64 ../gvm-qemu-shm-v10.1.2/
-cp -a pc-bios ../gvm-qemu-shm-v10.1.2/
-tar -czf ../gvm-qemu-shm-v10.1.2.tar.gz \
-    -C .. gvm-qemu-shm-v10.1.2
+mkdir -p ../gvm-qemu-shm-v10.1.2-linux-v7.3
+cp build-static/qemu-system-x86_64 ../gvm-qemu-shm-v10.1.2-linux-v7.3/
+cp -a pc-bios ../gvm-qemu-shm-v10.1.2-linux-v7.3/
+tar -czf ../gvm-qemu-shm-v10.1.2-linux-v7.3.tar.gz \
+    -C .. gvm-qemu-shm-v10.1.2-linux-v7.3
 ```
 
 The `file` output should include `statically linked` or `static-pie linked`.
@@ -99,30 +89,39 @@ Use a separate package name so the shared-memory runtime is identifiable.
 To boot GiantVM, a dedicated GiantVM kernel is also required.
 
 ```text
-https://github.com/GiantVM/GVM-kernel/tree/shared-memory/v7.2-rc2
+https://github.com/GiantVM/GVM-kernel/tree/shared-memory/v7.3
 ```
 
 For a two-node shared-memory VM, pair this branch with kernel
-`shared-memory/v7.2-rc2` (Linux 7.2-rc2), enable
+`shared-memory/v7.3` (Linux 7.3), enable
 `CONFIG_KVM_DSM_IRQ_FORWARD`, and boot that kernel on the host. Pass the same
 `-shm-path` to both QEMU processes. The guest can use an ordinary Linux kernel.
 Run both QEMU processes on the same host; `-shm-path` is a filesystem path
 such as `/dev/shm/gvm-shared-memory`. Disable host APICv with
 `kvm_intel.enable_apicv=0` and reboot, as described in the kernel README.
 
-The 7.2-rc2 host uses capability `KVM_CAP_X86_DSM_IRQ_FORWARD` (250) and the
+The 7.3 host uses capability `KVM_CAP_X86_DSM_IRQ_FORWARD` (253) and the
 unified `KVM_EXIT_DSM_IRQ_FORWARD` (44) payload. QEMU must enable the capability
 and inject each forwarded ICR on both the local node and remote nodes. At
-startup QEMU prints `GVM: enabled unified DSM IRQ forwarding ABI (cap 250)`.
+startup QEMU prints `GVM: enabled unified DSM IRQ forwarding ABI (cap 253)`.
 The older 7.1-rc3/7.1-rc6 ABI uses separate exit reasons 45, 46, and 47;
-QEMU retains that path when capability 250 is absent. A QEMU version string
+QEMU retains that path when capability 253 is absent. A QEMU version string
 such as `10.1.2` alone does not identify a compatible GiantVM ABI.
 
-Kernel `upstream/7.1-rc3` and QEMU `main` provide TCP DSM instead.
+Kernel `upstream/7.3` and QEMU `upstream/v10.1.2-linux-v7.3` provide TCP DSM instead.
 Do not use this shared-memory branch for TCP DSM: its DSM memory transport
 is disabled.
 
-The two-node boot and remote CPU execution checks were verified with the
-default CPU model and the provided Linux 6.6.71 guest. An additional
-`-cpu host` check brought all CPUs online but then hit TSC skew and an RCU
-stall. Clock consistency and that CPU model need further investigation.
+The default CPU model is the initial validation target. The earlier
+Linux 7.2-rc2 tests using `-cpu host` exposed TSC skew and an RCU stall;
+those results do not establish Linux 7.3 runtime compatibility.
+
+## Linux 7.3 ABI migration
+
+Official Linux v7.3 uses capability IDs 249 (S390_HPAGE_2G),
+250 (PPC_COMPAT_CAPS), and 251 (ARM_PMU_V3_STRICT). This series uses
+252 for TCP DSM memory and 253 for unified interrupt forwarding.
+The exit reasons and the ioctl numbers, payload sizes, and field offsets
+are unchanged. Use both QEMU nodes from the same Linux 7.3 branch.
+The earlier main/shared-memory binaries target capability IDs 249/250
+and must be rebuilt for these kernel branches.
