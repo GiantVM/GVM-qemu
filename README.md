@@ -5,9 +5,9 @@ Our core technical approach provides a Single System Image without requiring any
 
 ## Introduction
 
-The `main` branch hosts the DSM (Distributed Shared Memory) version of GiantVM, which can be evaluated over TCP/IP.
+The `upstream/v10.1.2-linux-v7.3` branch hosts the DSM (Distributed Shared Memory) version of GiantVM, which can be evaluated over TCP/IP.
 
-The `shared-memory/v10.1.2` branch hosts our code that utilizes shared memory as the underlying communication and memory access mechanism for GiantVM.
+The `shared-memory/v10.1.2-linux-v7.3` branch hosts our code that utilizes shared memory as the underlying communication and memory access mechanism for GiantVM.
 
 To boot GiantVM, a dedicated GiantVM kernel is also required.
 
@@ -23,7 +23,7 @@ https://github.com/GiantVM/GVM-kernel
 Clone the GiantVM QEMU repository from GitHub:
 
 ```bash
-git clone https://github.com/GiantVM/GVM-qemu.git
+git clone --branch upstream/v10.1.2-linux-v7.3 https://github.com/GiantVM/GVM-qemu.git
 ```
 
 ### Step 2. Build GiantVM QEMU
@@ -94,31 +94,41 @@ The `file` output should include `statically linked` or `static-pie linked`.
 Package this binary with the `pc-bios` directory from the same source tree:
 
 ```bash
-mkdir -p ../gvm-qemu-dsm-v10.1.2
-cp build-static/qemu-system-x86_64 ../gvm-qemu-dsm-v10.1.2/
-cp -a pc-bios ../gvm-qemu-dsm-v10.1.2/
-tar -czf ../gvm-qemu-dsm-v10.1.2.tar.gz \
-    -C .. gvm-qemu-dsm-v10.1.2
+mkdir -p ../gvm-qemu-dsm-v10.1.2-linux-v7.3
+cp build-static/qemu-system-x86_64 ../gvm-qemu-dsm-v10.1.2-linux-v7.3/
+cp -a pc-bios ../gvm-qemu-dsm-v10.1.2-linux-v7.3/
+tar -czf ../gvm-qemu-dsm-v10.1.2-linux-v7.3.tar.gz \
+    -C .. gvm-qemu-dsm-v10.1.2-linux-v7.3
 ```
 
 ## Kernel/QEMU ABI pairing
 
-For TCP DSM, pair this `main` code with GVM-kernel
-[`upstream/7.1-rc3`](https://github.com/GiantVM/GVM-kernel/tree/upstream/7.1-rc3).
+For TCP DSM, pair this `upstream/v10.1.2-linux-v7.3` code with GVM-kernel
+[`upstream/7.3`](https://github.com/GiantVM/GVM-kernel/tree/upstream/7.3).
 This kernel branch includes the remote AP startup and 4KB DSM mapping fixes;
 the original kernel `main` does not include these fixes.
 Enable both `CONFIG_KVM_DSM_IRQ_FORWARD` and `CONFIG_KVM_DSM` in the host
-kernel. The memory capability is `KVM_CAP_X86_DSM=249`; interrupt exits are
+kernel. The memory capability is `KVM_CAP_X86_DSM=252`; interrupt exits are
 `KVM_EXIT_DSM_SEND_IRQ=45`, `KVM_EXIT_DSM_X2_ICR=46`, and
 `KVM_EXIT_DSM_APIC_BASE=47`. Both headers must agree on these numbers and
 the ioctl payload layouts. The QEMU 10.1.2 version string alone does not
 identify this ABI.
 
-The shared-memory pair instead uses GVM-kernel `shared-memory/v7.2-rc2`
-and GVM-qemu `shared-memory/v10.1.2`. Its interrupt capability is 250 and its
+The shared-memory pair instead uses GVM-kernel `shared-memory/v7.3`
+and GVM-qemu `shared-memory/v10.1.2-linux-v7.3`. Its interrupt capability is 253 and its
 unified exit reason is 44. QEMU enables that capability explicitly and
 decodes `dsm_irq_forward`, rather than the legacy APIC-base payload.
 
 For TCP DSM, omit `-shm-path` and supply the node addresses with
 `-local-cpu ... iplist=...`. The two nodes must run matching QEMU builds.
 The build command above disables RDMA; this pairing describes TCP DSM.
+
+## Linux 7.3 ABI migration
+
+Official Linux v7.3 uses capability IDs 249 (S390_HPAGE_2G),
+250 (PPC_COMPAT_CAPS), and 251 (ARM_PMU_V3_STRICT). This series uses
+252 for TCP DSM memory and 253 for unified interrupt forwarding.
+The exit reasons and the ioctl numbers, payload sizes, and field offsets
+are unchanged. Use both QEMU nodes from the same Linux 7.3 branch.
+The earlier main/shared-memory binaries target capability IDs 249/250
+and must be rebuilt for these kernel branches.

@@ -182,7 +182,7 @@ struct kvm_xen_exit {
 #define KVM_EXIT_DSM_SEND_IRQ     45
 #define KVM_EXIT_DSM_X2_ICR       46
 #define KVM_EXIT_DSM_APIC_BASE    47
-/* Unified forwarding ABI used by GVM-kernel shared-memory/v7.2-rc2. */
+/* Unified forwarding ABI used by GVM-kernel shared-memory/v7.3. */
 #define KVM_EXIT_DSM_IRQ_FORWARD  44
 #define KVM_DSM_IRQ_FORWARD_XAPIC_ICR   1
 #define KVM_DSM_IRQ_FORWARD_X2APIC_ICR  2
@@ -986,8 +986,8 @@ struct kvm_enable_cap {
 #define KVM_CAP_ARM_EL2 240
 #define KVM_CAP_ARM_EL2_E2H0 241
 #define KVM_CAP_RISCV_MP_STATE_RESET 242
-#define KVM_CAP_X86_DSM 249
-#define KVM_CAP_X86_DSM_IRQ_FORWARD 250
+#define KVM_CAP_X86_DSM 252
+#define KVM_CAP_X86_DSM_IRQ_FORWARD 253
 
 struct kvm_irq_routing_irqchip {
 	__u32 irqchip;
