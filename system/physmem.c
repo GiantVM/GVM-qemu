@@ -2985,10 +2985,10 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
                     .length = *l,
                 };
                 ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMCPY, &cpy);
-                if (ret < 0) {
+                if (ret != 0) {
                     error_report("KVM_DSM_MEMCPY write failed: %s",
-                                 strerror(-ret));
-                    return MEMTX_ERROR;
+                                 ret < 0 ? strerror(-ret) : "partial copy");
+                    exit(1);
                 }
             } else {
                 memmove(ram_ptr, buf, *l);
@@ -3101,10 +3101,10 @@ static MemTxResult flatview_read_continue_step(MemTxAttrs attrs, uint8_t *buf,
                     .length = *l,
                 };
                 ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMCPY, &cpy);
-                if (ret < 0) {
+                if (ret != 0) {
                     error_report("KVM_DSM_MEMCPY read failed: %s",
-                                 strerror(-ret));
-                    return MEMTX_ERROR;
+                                 ret < 0 ? strerror(-ret) : "partial copy");
+                    exit(1);
                 }
             } else {
                 memcpy(buf, ram_ptr, *l);
@@ -3558,6 +3558,10 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
     MemoryRegion *mr;
     ram_addr_t addr1;
     /* GiantVM changes */
+
+    if (!buffer) {
+        return;
+    }
     MachineState *ms = MACHINE(qdev_get_machine());
 
     mr = memory_region_from_host(buffer, &addr1);
@@ -3577,9 +3581,10 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
                 .length = len,
             };
             ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-            if (ret < 0) {
+            if (ret != 0) {
                 error_report("KVM_DSM_MEMPIN unpin failed: %s",
-                             strerror(-ret));
+                             ret < 0 ? strerror(-ret) : "unexpected result");
+                exit(1);
             }
         }
         memory_region_unref(mr);

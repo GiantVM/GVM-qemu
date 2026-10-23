@@ -775,8 +775,10 @@ static void ahci_write_fis_sdb(AHCIState *s, NCQTransferState *ncq_tfs)
 
     if (ad->res_fis_is_dsm) {
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 
@@ -812,8 +814,10 @@ static void ahci_write_fis_sdb(AHCIState *s, NCQTransferState *ncq_tfs)
     if (ad->res_fis_is_dsm) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 }
@@ -838,8 +842,10 @@ static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
 
     if (ad->res_fis_is_dsm) {
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 
@@ -878,8 +884,10 @@ static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
     if (ad->res_fis_is_dsm) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 }
@@ -905,8 +913,10 @@ static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
 
     if (ad->res_fis_is_dsm) {
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 
@@ -945,8 +955,10 @@ static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
     if (ad->res_fis_is_dsm) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 
@@ -1416,8 +1428,10 @@ static void handle_cmd(AHCIState *s, int port, uint8_t slot)
         pin.host_virt_addr = (__u64)cmd;
         pin.length = 32;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 
@@ -1456,8 +1470,10 @@ done:
     if (s->dev[port].lst_is_dsm) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
     return;
@@ -1486,8 +1502,10 @@ static void ahci_pio_transfer(const IDEDMA *dma)
 
     if (ad->lst_is_dsm) {
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 
@@ -1542,8 +1560,10 @@ out:
     if (ad->lst_is_dsm) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 }
@@ -1598,8 +1618,10 @@ static int32_t ahci_dma_prepare_buf(const IDEDMA *dma, int32_t limit)
 
     if (ad->lst_is_dsm) {
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (r < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        if (r != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         r < 0 ? strerror(-r) : "unexpected result");
+            exit(1);
         }
     }
 
@@ -1618,8 +1640,10 @@ done:
     if (ad->lst_is_dsm) {
         pin.unpin = true;
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (r < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        if (r != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         r < 0 ? strerror(-r) : "unexpected result");
+            exit(1);
         }
     }
     return ret;
@@ -1644,8 +1668,10 @@ static void ahci_commit_buf(const IDEDMA *dma, uint32_t tx_bytes)
 
     if (ad->lst_is_dsm) {
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 
@@ -1655,8 +1681,10 @@ static void ahci_commit_buf(const IDEDMA *dma, uint32_t tx_bytes)
     if (ad->lst_is_dsm) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
+            exit(1);
         }
     }
 }
@@ -1678,8 +1706,10 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
 
     if (ad->lst_is_dsm) {
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (r < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        if (r != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         r < 0 ? strerror(-r) : "unexpected result");
+            exit(1);
         }
     }
 
@@ -1705,8 +1735,10 @@ done:
     if (ad->lst_is_dsm) {
         pin.unpin = true;
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (r < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", r);
+        if (r != 0) {
+            error_report("KVM_DSM_MEMPIN failed: %s",
+                         r < 0 ? strerror(-r) : "unexpected result");
+            exit(1);
         }
     }
     return ret;
