@@ -1414,14 +1414,6 @@ bool memory_region_init_ram_flags_nomigrate(MemoryRegion *mr,
                                             uint64_t size,
                                             uint32_t ram_flags,
                                             Error **errp);
-                                    
-bool memory_region_init_shram_flags_nomigrate(MemoryRegion *mr,
-                                            Object *owner,
-                                            const char *name,
-                                            uint64_t size,
-                                            uint32_t ram_flags,
-                                            const char *path,
-                                            Error **errp);
 
 
 /**
@@ -3154,7 +3146,6 @@ static inline bool memory_access_is_direct(MemoryRegion *mr, bool is_write,
 
 extern int local_cpus;
 extern int smp_cpus;
-extern const char *shm_path;
 /**
  * address_space_read: read from an address space.
  *
@@ -3186,7 +3177,7 @@ MemTxResult address_space_read(AddressSpace *as, hwaddr addr,
             l = len;
             mr = flatview_translate(fv, addr, &addr1, &l, false, attrs);
             if (len == l && memory_access_is_direct(mr, false, attrs) &&
-                (!kvm_enabled() || local_cpus == smp_cpus || shm_path != NULL)) {
+                (!kvm_enabled() || local_cpus == smp_cpus)) {
                 ptr = qemu_map_ram_ptr(mr->ram_block, addr1);
                 memcpy(buf, ptr, len);
             } else {

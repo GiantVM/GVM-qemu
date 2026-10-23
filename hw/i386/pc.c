@@ -846,7 +846,7 @@ void pc_memory_init(PCMachineState *pcms,
     linux_boot = (machine->kernel_filename != NULL);
 
     /* Start DSM */
-    if (machine->local_cpus != machine->smp.cpus && !machine->shm_path) {
+    if (machine->local_cpus != machine->smp.cpus) {
         if (kvm_enabled() && kvm_check_extension(kvm_state, KVM_CAP_X86_DSM)) {
             params.dsm_index = machine->local_cpu_start_index / machine->local_cpus;
             params.cluster_iplist = (void *) get_cluster_iplist(&params.cluster_iplist_len);

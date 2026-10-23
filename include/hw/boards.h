@@ -446,7 +446,6 @@ struct MachineState {
     bool acpi_spcr_enabled;
 
     /* distributed QEMU variables */
-    const char* shm_path;
     int local_cpus;
     int local_cpu_start_index;
     int qemu_nums;

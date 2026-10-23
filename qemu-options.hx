@@ -35,14 +35,6 @@ SRST
 ERST
 
 
-DEF("shm-path", HAS_ARG, QEMU_OPTION_shm_path,
-    "-shm-path FILE  allocate memory from shm for guest RAM\n", QEMU_ARCH_ALL)
-SRST
-``-shm-path path``
-    Allocate guest RAM from share memory in @var{path}. This option is for running
-    multiple QEMU instances on a single machine. To use distributed shared memory,
-    just don't specify this option.
-ERST
 
 DEF("help", 0, QEMU_OPTION_h,
     "-h or -help     display this help and exit\n", QEMU_ARCH_ALL)

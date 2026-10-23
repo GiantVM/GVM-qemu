@@ -2278,31 +2278,6 @@ RAMBlock *qemu_ram_alloc(ram_addr_t size, uint32_t ram_flags,
     return qemu_ram_alloc_internal(size, size, NULL, NULL, ram_flags, mr, errp);
 }
 
-RAMBlock *qemu_ram_alloc_shmem(ram_addr_t size, uint32_t ram_flags, 
-                               MemoryRegion *mr, const char *shm_path,
-                               Error **errp)
-{
-    int fd = shm_open(shm_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    if (fd == -1) {
-        goto err;
-    }
-    if (ftruncate(fd, size) == -1) {
-        shm_unlink(shm_path);
-        goto err;
-    }
-    void *host = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (host == MAP_FAILED) {
-        shm_unlink(shm_path);
-        goto err;
-    }
-    /* size_t align = QEMU_VMALLOC_ALIGN; */
-    return qemu_ram_alloc_from_ptr(size, host, mr, errp);
-
-err:
-    error_setg_errno(errp, errno, "cannot set up shared memory");
-    return NULL;
-}
-
 RAMBlock *qemu_ram_alloc_resizeable(ram_addr_t size, ram_addr_t maxsz,
                                     qemu_ram_resize_cb resized,
                                     MemoryRegion *mr, Error **errp)
@@ -3002,7 +2977,7 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
                                                false, true);
 
         MachineState *ms = MACHINE(qdev_get_machine());
-        if (kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
+        if (kvm_enabled() && ms->local_cpus != ms->smp.cpus) {
                 struct kvm_dsm_memcpy cpy = {
                     .write = true,
                     .host_virt_addr = (__u64)ram_ptr,
@@ -3110,7 +3085,7 @@ static MemTxResult flatview_read_continue_step(MemTxAttrs attrs, uint8_t *buf,
                                                false, false);
 
         MachineState *ms = MACHINE(qdev_get_machine());                                       
-        if (kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
+        if (kvm_enabled() && ms->local_cpus != ms->smp.cpus) {
                 int ret;
                 struct kvm_dsm_memcpy cpy = {
                     .write = false,
@@ -3532,10 +3507,10 @@ void *address_space_map(AddressSpace *as,
     fuzz_dma_read_cb(addr, *plen, mr);
     ptr = qemu_ram_ptr_length(mr->ram_block, xlat, plen, true, is_write);
 
-    if (is_dsm && kvm_enabled() && ms->local_cpus != ms->smp.cpus && !ms->shm_path)
+    if (is_dsm && kvm_enabled() && ms->local_cpus != ms->smp.cpus)
         *is_dsm = true;
 
-    if (kvm_enabled() && dsm_pin && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
+    if (kvm_enabled() && dsm_pin && ms->local_cpus != ms->smp.cpus) {
         int ret;
         struct kvm_dsm_mempin pin = {
             .write = is_write,
@@ -3572,7 +3547,7 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
         if (xen_enabled()) {
             xen_invalidate_map_cache_entry(buffer);
         }
-        if (kvm_enabled() && dsm_unpin && ms->local_cpus != ms->smp.cpus && !ms->shm_path) {
+        if (kvm_enabled() && dsm_unpin && ms->local_cpus != ms->smp.cpus) {
             int ret;
             struct kvm_dsm_mempin pin = {
                 .write = is_write,

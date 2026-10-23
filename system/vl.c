@@ -206,7 +206,6 @@ static int default_vga = 1;
 static int default_net = 1;
 
 /* distributed QEMU variables */
-const char* shm_path = NULL;
 int local_cpus = -1;
 int smp_cpus = -1;
 int local_cpu_start_index = 0;
@@ -2870,14 +2869,12 @@ void qmp_x_exit_preconfig(Error **errp)
 
 static void qemu_init_distributed(MachineState *ms)
 {
-    ms->shm_path = NULL;
     ms->local_cpus = -1;
     ms->local_cpu_start_index = 0;
     ms->qemu_nums = 0;
     ms->cluster_iplist = NULL;
     
     smp_cpus = ms->smp.cpus;
-    ms->shm_path = shm_path;
     if (local_cpus == -1) {
         ms->local_cpus = local_cpus = ms->smp.cpus;
     }
@@ -3763,9 +3760,6 @@ void qemu_init(int argc, char **argv)
                     error_report("iplist parse failed");
                     exit(1);
                 }
-                break;
-            case QEMU_OPTION_shm_path:
-                shm_path = optarg;
                 break;
             case QEMU_OPTION_debug:
                 /* Need to do: debug */

@@ -114,11 +114,7 @@ kernel. The memory capability is `KVM_CAP_X86_DSM=249`; interrupt exits are
 the ioctl payload layouts. The QEMU 10.1.2 version string alone does not
 identify this ABI.
 
-The shared-memory pair instead uses GVM-kernel `shared-memory/v7.2-rc2`
-and GVM-qemu `shared-memory/v10.1.2`. Its interrupt capability is 250 and its
-unified exit reason is 44. QEMU enables that capability explicitly and
-decodes `dsm_irq_forward`, rather than the legacy APIC-base payload.
 
-For TCP DSM, omit `-shm-path` and supply the node addresses with
+For TCP DSM, supply the node addresses with
 `-local-cpu ... iplist=...`. The two nodes must run matching QEMU builds.
 The build command above disables RDMA; this pairing describes TCP DSM.
