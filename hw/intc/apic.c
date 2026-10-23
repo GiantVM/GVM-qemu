@@ -85,12 +85,13 @@ static void apic_set_irq_remote(APICCommonState *s, int vector_num, int trigger_
     }
 }
 
-static void apic_startup_remote(CPUState *cpu, int vector_num)
+static void apic_startup_remote(APICCommonState *source, CPUState *cpu,
+                                int vector_num)
 {
     int index = cpu->cpu_index;
     MachineState *ms = MACHINE(qdev_get_machine());
     if (ms->local_cpus != ms->smp.cpus && !is_local_node(index)) {
-        // startup_forwarding(index, vector_num, 0);
+        startup_forwarding(CPU(source->cpu)->cpu_index, index, vector_num);
     } else {
         apic_startup(cpu, vector_num);
     }
@@ -810,7 +811,7 @@ static void apic_deliver(DeviceState *dev, uint32_t dest, uint8_t dest_mode,
 
         case APIC_DM_SIPI:
             foreach_apic(apic_iter, deliver_bitmask,
-                         apic_startup_remote(CPU(apic_iter->cpu), vector_num) );
+                         apic_startup_remote(s, CPU(apic_iter->cpu), vector_num) );
             return;
     }
 
@@ -1041,17 +1042,7 @@ static void apic_send_msi(MSIMessage *msi)
     uint8_t trigger_mode = (data >> MSI_DATA_TRIGGER_SHIFT) & 0x1;
     uint8_t delivery = (data >> MSI_DATA_DELIVERY_MODE_SHIFT) & 0x7;
     /* XXX: Ignore redirection hint. */
-    if (vector < 16) {
-        DeviceState *dev = cpu_get_current_apic();
-        if (dev) {
-            APIC(dev)->esr |= APIC_ESR_RECV_ACCEPT;
-            apic_local_deliver(APIC(dev), APIC_LVT_ERROR);
-        } else {
-        }
-    }
-    else {
-        apic_deliver_irq(dest, dest_mode, delivery, vector, trigger_mode);
-    }
+    apic_deliver_irq(dest, dest_mode, delivery, vector, trigger_mode);
 }
 
 static int apic_register_write(int index, uint64_t val)

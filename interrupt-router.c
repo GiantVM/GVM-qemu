@@ -15,10 +15,12 @@
 
 #include "include/system/memory.h"
 #include "system/address-spaces.h"
+#include "system/runstate.h"
 
 #include "interrupt-router.h"
 #include "qom/object_interfaces.h"
 #include "hw/boards.h"
+#include "hw/i386/apic_internal.h"
 
 #define ROUTER_BUFFER_SIZE 1024
 
@@ -100,6 +102,7 @@ enum forward_type {
     LAPIC,
     SPECIAL_INT,
     SIPI,
+    ICR,
     X2APIC,
     APIC_BASE,
     INIT_LEVEL_DEASSERT,
@@ -163,6 +166,7 @@ static void *io_router_loop(void *arg)
     int host;
     uint32_t base_index;
     __u64 base_data;
+    CPUState *router_cpu = NULL;
 
     void *data;
     struct io_router_loop_arg *argp = (struct io_router_loop_arg *)arg;
@@ -177,7 +181,10 @@ static void *io_router_loop(void *arg)
 
         cpu_index = qemu_get_sbe32(req_file);
         if (cpu_index != CPU_INDEX_ANY) {
-            current_cpu = qemu_get_cpu(cpu_index);
+            router_cpu = qemu_get_cpu(cpu_index);
+            /* current_cpu is thread-local and is required by APIC/MMIO
+             * handlers reached from the router thread. */
+            current_cpu = router_cpu;
         }
         switch(type)
         {
@@ -228,12 +235,12 @@ static void *io_router_loop(void *arg)
                 /* Any CPU broadcast to others */
                 addr = qemu_get_be64(req_file);
                 val = qemu_get_be32(req_file);
-                apic_lapic_write(current_cpu, addr, val);
+                apic_lapic_write(router_cpu, addr, val);
                 break;
             case SPECIAL_INT:
                 /* Any CPU send to target CPUs of a multicast/broadcast of SMI/NMI/INIT */
                 mask = qemu_get_sbe32(req_file);
-                cpu_interrupt(current_cpu, mask);
+                cpu_interrupt(router_cpu, mask);
                 break;
             case X2APIC:
                 x2data = qemu_get_be64(req_file);
@@ -245,7 +252,8 @@ static void *io_router_loop(void *arg)
                 }
                 break;
             case SIPI:
-                /* Any CPU send to target CPUs of a multicast/broadcast of SIPI */
+            case ICR:
+                /* Forward an APIC ICR write to the target CPU. */
                 val = qemu_get_sbe32(req_file);
                 val2 = qemu_get_sbe32(req_file);
                 dest_id = qemu_get_be32(req_file);
@@ -254,7 +262,6 @@ static void *io_router_loop(void *arg)
                     error_report("KVM DSM IPI injection for vCPU %d failed: %s",
                                  cpu_index, strerror(-ret));
                 }
-                // apic_startup(current_cpu, vector_num);
                 break;
             case APIC_BASE:
                 host = qemu_get_sbe32(req_file);
@@ -269,13 +276,13 @@ static void *io_router_loop(void *arg)
                 break;
             case INIT_LEVEL_DEASSERT:
                 /* Any CPU send to target CPUs of a multicast/broadcast of INIT Level De-assert */
-                apic_init_level_deassert(current_cpu);
+                apic_init_level_deassert(router_cpu);
                 break;
             case FIXED_INT:
                 /* Any CPU send to target CPU(s) a lowest-priority/multicast/broadcast interrupt */
                 vector_num = qemu_get_sbe32(req_file);
                 trigger_mode = qemu_get_sbe32(req_file);
-                apic_set_irq_detour(current_cpu, vector_num, trigger_mode);
+                apic_set_irq_detour(router_cpu, vector_num, trigger_mode);
                 break;
             case IOAPIC_INI:
                 val = qemu_get_sbe32(req_file);
@@ -726,30 +733,55 @@ void special_interrupt_forwarding(int cpu_index, int mask)
     qemu_mutex_unlock(&io_forwarding_mutex);
 }
 
-/* @unicast: current CPU -> dest CPU (CPU No. cpu_index) */
-void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2, uint32_t dest_id)
+static int icr_target_node(uint32_t val, uint32_t dest_id, int local_cpus)
+{
+    uint32_t dest_mode = (val >> 11) & 1;
+    uint32_t shorthand = (val >> 18) & 3;
+
+    if (dest_mode == 0 && shorthand == 0 &&
+        dest_id != 0xff && dest_id != 0xffffffff) {
+        return dest_id / local_cpus;
+    }
+
+    return -1;
+}
+
+/* Forward an ICR write.  Non-physical or broadcast destinations may span
+ * multiple QEMU instances, so those messages are sent to every peer. */
+void icr_forwarding(int cpu_index, uint32_t reg, uint32_t val,
+                    uint32_t dest_id)
 {
     qemu_mutex_lock(&io_forwarding_mutex);
     MachineState *ms = MACHINE(qdev_get_machine());
     QEMUFile *io_connect_file;
+    int source_node = cpu_index / ms->local_cpus;
+    int target_node = icr_target_node(val, dest_id, ms->local_cpus);
 
-      for (int i = 0; i < ms->qemu_nums; i++) {
-        if (i == (cpu_index / ms->local_cpus)) {
+    for (int i = 0; i < ms->qemu_nums; i++) {
+        if (i == source_node || (target_node >= 0 && i != target_node)) {
             continue;
         }
         io_connect_file = req_files[i];
         if (io_connect_file) {
-            qemu_put_be16(io_connect_file, SIPI);
-            /* Indicate which CPU we want to forward this interrupt to */
+            qemu_put_be16(io_connect_file, ICR);
             qemu_put_sbe32(io_connect_file, cpu_index);
+            qemu_put_be32(io_connect_file, reg);
             qemu_put_be32(io_connect_file, val);
-            qemu_put_be32(io_connect_file, val2);
             qemu_put_be32(io_connect_file, dest_id);
             qemu_fflush(io_connect_file);
         }
     }
 
     qemu_mutex_unlock(&io_forwarding_mutex);
+}
+
+/* Forward a SIPI reached through the userspace APIC path. */
+void startup_forwarding(int source_cpu_index, int target_cpu_index,
+                        int vector_num)
+{
+    icr_forwarding(source_cpu_index, 0x300, /* APIC_ICR */
+                   APIC_DM_SIPI | (vector_num & APIC_VECTOR_MASK),
+                   target_cpu_index);
 }
 
 void x2apic_forwarding(int cpu_index, __u64 data)
@@ -855,45 +887,52 @@ void ioapic_irq_forwarding(int irq, int level)
 
 void ioapic_router_forwarding(struct kvm_irq_routing *routing) {
     qemu_mutex_lock(&io_forwarding_mutex);
-    QEMUFile *io_connect_file = req_files[1];
-    
-    qemu_put_be16(io_connect_file, INI_ROUTER);
-    qemu_put_sbe32(io_connect_file, CPU_INDEX_ANY);
-    qemu_put_be32(io_connect_file, routing->nr);     
-    qemu_put_be32(io_connect_file, routing->flags);  
+    MachineState *ms = MACHINE(qdev_get_machine());
 
-    for (int i = 0; i < routing->nr; i++) {
-        struct kvm_irq_routing_entry *entry = &(routing->entries[i]);
+    for (int peer = 1; peer < ms->qemu_nums; peer++) {
+        QEMUFile *io_connect_file = req_files[peer];
+        QEMUFile *io_connect_return_file = rsp_files[peer];
 
-        qemu_put_be32(io_connect_file, entry->gsi);
-        qemu_put_be32(io_connect_file, entry->type);
-        qemu_put_be32(io_connect_file, entry->flags);
-        qemu_put_be32(io_connect_file, entry->pad); 
-
-        switch (entry->type) {
-            case KVM_IRQ_ROUTING_IRQCHIP: {
-                struct kvm_irq_routing_irqchip *irq = &(entry->u.irqchip);
-                qemu_put_be32(io_connect_file, irq->irqchip); 
-                qemu_put_be32(io_connect_file, irq->pin);
-                break;
-            }
-            case KVM_IRQ_ROUTING_MSI: {
-                struct kvm_irq_routing_msi *msi = &(entry->u.msi);
-                qemu_put_be32(io_connect_file, msi->address_lo);
-                qemu_put_be32(io_connect_file, msi->address_hi);
-                qemu_put_be32(io_connect_file, msi->data);
-                qemu_put_be32(io_connect_file, msi->pad);
-                break;
-            }
-            default:
-                fprintf(stderr, "Unsupported routing type: %d\n", entry->type);
-                break;
+        if (!io_connect_file || !io_connect_return_file) {
+            error_report("missing IO router connection for QEMU %d", peer);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            continue;
         }
-    }
 
-    qemu_fflush(io_connect_file); 
-    io_connect_file = rsp_files[1];
-    while(qemu_get_be32(io_connect_file) != 99) {
+        qemu_put_be16(io_connect_file, INI_ROUTER);
+        qemu_put_sbe32(io_connect_file, CPU_INDEX_ANY);
+        qemu_put_be32(io_connect_file, routing->nr);
+        qemu_put_be32(io_connect_file, routing->flags);
+
+        for (int i = 0; i < routing->nr; i++) {
+            struct kvm_irq_routing_entry *entry = &routing->entries[i];
+
+            qemu_put_be32(io_connect_file, entry->gsi);
+            qemu_put_be32(io_connect_file, entry->type);
+            qemu_put_be32(io_connect_file, entry->flags);
+            qemu_put_be32(io_connect_file, entry->pad);
+
+            switch (entry->type) {
+            case KVM_IRQ_ROUTING_IRQCHIP:
+                qemu_put_be32(io_connect_file, entry->u.irqchip.irqchip);
+                qemu_put_be32(io_connect_file, entry->u.irqchip.pin);
+                break;
+            case KVM_IRQ_ROUTING_MSI:
+                qemu_put_be32(io_connect_file, entry->u.msi.address_lo);
+                qemu_put_be32(io_connect_file, entry->u.msi.address_hi);
+                qemu_put_be32(io_connect_file, entry->u.msi.data);
+                qemu_put_be32(io_connect_file, entry->u.msi.pad);
+                break;
+            default:
+                error_report("Unsupported routing type: %d", entry->type);
+                qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+                break;
+            }
+        }
+
+        qemu_fflush(io_connect_file);
+        while (qemu_get_be32(io_connect_return_file) != 99) {
+        }
     }
     qemu_mutex_unlock(&io_forwarding_mutex);
 }

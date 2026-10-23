@@ -3328,7 +3328,8 @@ int kvm_cpu_exec(CPUState *cpu)
             break;
         case KVM_EXIT_DSM_SEND_IRQ:
             qemu_forward_count++;
-            startup_forwarding(run->lapic_irq.id, run->lapic_irq.val, run->lapic_irq.val2, run->lapic_irq.dest_id);
+            icr_forwarding(run->lapic_irq.id, run->lapic_irq.val,
+                           run->lapic_irq.val2, run->lapic_irq.dest_id);
             memset(&run->lapic_irq, 0, sizeof(run->lapic_irq));
             run->exit_reason = 0;
             ret = 0;
@@ -4687,4 +4688,3 @@ int kvm_ioapic_router_handle(struct kvm_irq_routing *routing)
 
     return fd;
 }
-

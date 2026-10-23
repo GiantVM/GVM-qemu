@@ -33,7 +33,10 @@ void mmio_forwarding(hwaddr addr, MemTxAttrs attrs, uint8_t *buf, int len, bool 
 void pio_forwarding(uint16_t port, MemTxAttrs attrs, void *data, int direction, int size, uint32_t count, bool broadcast);
 void lapic_forwarding(int cpu_index, hwaddr addr, uint32_t val);
 void special_interrupt_forwarding(int cpu_index, int mask);
-void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2, uint32_t dest_id);
+void icr_forwarding(int cpu_index, uint32_t reg, uint32_t val,
+                    uint32_t dest_id);
+void startup_forwarding(int source_cpu_index, int target_cpu_index,
+                        int vector_num);
 void x2apic_forwarding(int cpu_index, __u64 data);
 void apic_base_forwarding(int cpu_index, bool host, uint32_t index, __u64 data);
 void init_level_deassert_forwarding(int cpu_index);
