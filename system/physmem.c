@@ -2986,10 +2986,11 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
                 };
                 ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMCPY, &cpy);
                 if (ret < 0) {
-                    fprintf(stderr, "KVM_DSM_MEMCPY failed %d\n", ret);
+                    error_report("KVM_DSM_MEMCPY write failed: %s",
+                                 strerror(-ret));
+                    return MEMTX_ERROR;
                 }
-            }
-            else {
+            } else {
                 memmove(ram_ptr, buf, *l);
             }
         invalidate_and_set_dirty(mr, mr_addr, *l);
@@ -3009,8 +3010,14 @@ static MemTxResult flatview_write_continue(FlatView *fv, hwaddr addr,
     const uint8_t *buf = ptr;
 
     for (;;) {
-        result |= flatview_write_continue_step(attrs, buf, len, mr_addr, &l,
-                                               mr);
+        MemTxResult step_result;
+
+        step_result = flatview_write_continue_step(attrs, buf, len, mr_addr,
+                                                    &l, mr);
+        result |= step_result;
+        if (step_result != MEMTX_OK) {
+            break;
+        }
 
         len -= l;
         buf += l;
@@ -3095,10 +3102,11 @@ static MemTxResult flatview_read_continue_step(MemTxAttrs attrs, uint8_t *buf,
                 };
                 ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMCPY, &cpy);
                 if (ret < 0) {
-                    fprintf(stderr, "KVM_DSM_MEMCPY failed %d\n", ret);
+                    error_report("KVM_DSM_MEMCPY read failed: %s",
+                                 strerror(-ret));
+                    return MEMTX_ERROR;
                 }
-            }
-            else {
+            } else {
                 memcpy(buf, ram_ptr, *l);
             }
 
@@ -3117,7 +3125,14 @@ MemTxResult flatview_read_continue(FlatView *fv, hwaddr addr,
 
     fuzz_dma_read_cb(addr, len, mr);
     for (;;) {
-        result |= flatview_read_continue_step(attrs, buf, len, mr_addr, &l, mr);
+        MemTxResult step_result;
+
+        step_result = flatview_read_continue_step(attrs, buf, len, mr_addr,
+                                                   &l, mr);
+        result |= step_result;
+        if (step_result != MEMTX_OK) {
+            break;
+        }
 
         len -= l;
         buf += l;
@@ -3520,7 +3535,13 @@ void *address_space_map(AddressSpace *as,
         };
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret < 0) {
-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+            error_report("KVM_DSM_MEMPIN pin failed: %s", strerror(-ret));
+            if (is_dsm) {
+                *is_dsm = false;
+            }
+            memory_region_unref(mr);
+            *plen = 0;
+            return NULL;
         }
     }
 
@@ -3553,11 +3574,12 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
                 .write = is_write,
                 .unpin = true,
                 .host_virt_addr = (__u64)buffer,
-                .length = access_len,
+                .length = len,
             };
             ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
             if (ret < 0) {
-                fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+                error_report("KVM_DSM_MEMPIN unpin failed: %s",
+                             strerror(-ret));
             }
         }
         memory_region_unref(mr);
