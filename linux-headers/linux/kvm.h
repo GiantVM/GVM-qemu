@@ -182,11 +182,6 @@ struct kvm_xen_exit {
 #define KVM_EXIT_DSM_SEND_IRQ     45
 #define KVM_EXIT_DSM_X2_ICR       46
 #define KVM_EXIT_DSM_APIC_BASE    47
-/* Unified forwarding ABI used by GVM-kernel shared-memory/v7.2-rc2. */
-#define KVM_EXIT_DSM_IRQ_FORWARD  44
-#define KVM_DSM_IRQ_FORWARD_XAPIC_ICR   1
-#define KVM_DSM_IRQ_FORWARD_X2APIC_ICR  2
-
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
 #define KVM_INTERNAL_ERROR_EMULATION	1
@@ -232,15 +227,6 @@ struct kvm_run {
 	__u64 psw_addr; /* psw lower half */
 #endif
 	union {
-		struct {
-			__u32 vcpu_id;
-			__u32 type;
-			__u32 val;
-			__u32 val2;
-			__u32 dest_id;
-			__u32 pad;
-			__u64 data;
-		} dsm_irq_forward;
 		struct {
 			__u32 id;
 			__u32 val;
@@ -987,7 +973,6 @@ struct kvm_enable_cap {
 #define KVM_CAP_ARM_EL2_E2H0 241
 #define KVM_CAP_RISCV_MP_STATE_RESET 242
 #define KVM_CAP_X86_DSM 249
-#define KVM_CAP_X86_DSM_IRQ_FORWARD 250
 
 struct kvm_irq_routing_irqchip {
 	__u32 irqchip;
