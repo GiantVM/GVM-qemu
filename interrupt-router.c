@@ -19,31 +19,23 @@
 #include "interrupt-router.h"
 #include "qom/object_interfaces.h"
 #include "hw/boards.h"
-#include "migration/rdma.h"
 
 #define ROUTER_BUFFER_SIZE 1024
-// #define ROUTER_CONNECTION_UNIX_SOCKET
-#define ROUTER_CONNECTION_TCP
-//#define ROUTER_CONNECTION_RDMA
 
-/* Unix socket */
-#define ROUTER_SOCKET_PREFIX "/home/binss/work/qemu-io-router-socket"
-
-/* TCP */
-#define ROUTER_HOST_LOCALHOST "127.0.0.1"
 #define ROUTER_DEFAULT_PORT 40000
 #define ROUTER_MAX_INDEX 63
 #define CPU_INDEX_ANY -1
 
-/* RDMA */
-//#define ROUTER_RDMA_DEBUG
+struct router_address {
+    char host[20];
+    char port[10];
+    int target;
+};
 static char **router_hosts = NULL;
 static uint32_t router_hosts_num = 0;
 
 static QEMUFile **req_files = NULL;
 static QEMUFile **rsp_files = NULL;
-static QEMUFile **listen_req_files = NULL;
-static QEMUFile **listen_rsp_files = NULL;
 
 QemuMutex ipi_mutex;
 QemuMutex io_forwarding_mutex;
@@ -120,13 +112,6 @@ enum forward_type {
     SHUTDOWN,
     RESET,
     EXIT,
-};
-
-enum rdma_role {
-    RDMA_LISTEN,
-    RDMA_LISTEN_REVERSE,
-    RDMA_CONNECT,
-    RDMA_CONNECT_REVERSE,
 };
 
 static void kvm_handle_remote_io(uint16_t port, MemTxAttrs attrs, void *data, int direction,
@@ -374,151 +359,7 @@ static void *io_router_loop(void *arg)
     return NULL;
 }
 
-#ifdef ROUTER_CONNECTION_RDMA
-/* TODO: Do real router address resolve */
-static int get_rdma_router_address(int target, int role, struct router_address *addr)
-{
-    int host;
-    int port;
-    int qemu_index;
-    MachineState *ms = MACHINE(qdev_get_machine());
 
-    if (addr == NULL) {
-        return -EINVAL;
-    }
-
-    if (target < 0 || target > ROUTER_MAX_INDEX) {
-        return -EINVAL;
-    }
-
-    qemu_index = ms->local_cpu_start_index / ms->local_cpus;
-
-    switch (role) {
-        case RDMA_LISTEN:
-            host = qemu_index;
-            port = ms->qemu_nums * qemu_index * 2 + target * 2;
-            break;
-        case RDMA_CONNECT_REVERSE:
-            host = qemu_index;
-            port = ms->qemu_nums * qemu_index * 2 + target * 2 + 1;
-            break;
-        case RDMA_CONNECT:
-            host = target;
-            port = ms->qemu_nums * target * 2 + qemu_index * 2;
-            break;
-        case RDMA_LISTEN_REVERSE:
-            host = target;
-            port = ms->qemu_nums * target * 2 + qemu_index * 2 + 1;
-            break;
-        default:
-            printf("get_rdma_router_address failed. role %d is illegal\n", role);
-            return -EINVAL;
-    }
-
-    sprintf(addr->host, "%s", router_hosts[host]);
-    sprintf(addr->port, "%d", ROUTER_DEFAULT_PORT + port);
-    addr->target = target;
-    return 0;
-}
-
-static void qemu_io_router_thread_run_rdma(void)
-{
-    int ret;
-    struct router_address addr;
-    int i = 0;
-    int done = 0;
-
-    MachineState *ms = MACHINE(qdev_get_machine());
-
-    // we build 2x connection since the connection is simplex
-    for (i = 0; i < ms->qemu_nums; i++) {
-        if (i == ms->local_cpu_start_index / ms->local_cpus) {
-            continue;
-        }
-        ret = get_rdma_router_address(i, RDMA_LISTEN, &addr);
-        if (ret) {
-            printf("get_router_address failed, ret: %d\n", ret);
-            return;
-        }
-        printf("QEMU %d wait for RDMA connection on %s:%s\n", i, addr.host, addr.port);
-
-        listen_rsp_files[i] = qemu_rdma_build_incoming_file(&addr);
-        ret = get_rdma_router_address(i, RDMA_CONNECT_REVERSE, &addr);
-        if (ret) {
-            printf("get_router_address failed, ret: %d\n", ret);
-            return;
-        }
-        rsp_files[i] = qemu_rdma_build_incoming_file(&addr);
-        printf("QEMU %d wait for RDMA connection on %s:%s\n", i, addr.host, addr.port);
-    }
-
-    while (done < ms->qemu_nums - 1) {
-        for (i = 0; i < ms->qemu_nums; i++) {
-            if (listen_req_files[i]) {
-                struct io_router_loop_arg *arg = (struct io_router_loop_arg *)g_malloc0(sizeof(struct io_router_loop_arg));
-                memset(arg, 0, sizeof(struct io_router_loop_arg));
-                arg->req_file = listen_rsp_files[i];
-                arg->rsp_file = listen_req_files[i];
-
-                QemuThread *thread = g_malloc0(sizeof(QemuThread));
-                qemu_thread_create(thread, "io-router-connection", io_router_loop,
-                           arg, QEMU_THREAD_JOINABLE);
-                listen_req_files[i] = NULL;
-                done++;
-            }
-        }
-    }
-}
-
-static void connect_io_router_rdma(void)
-{
-    struct router_address addr;
-    int ret;
-    int i = 0;
-    int done = 0;
-    MachineState *ms = MACHINE(qdev_get_machine());
-    int local_index = ms->local_cpu_start_index / ms->local_cpus;
-
-    // we build 2x connection since the connection is simplex
-    for (i = 0; i < ms->qemu_nums; i ++) {
-        if (i == local_index) {
-            continue;
-        }
-        ret = get_rdma_router_address(i, RDMA_CONNECT, &addr);
-        if (ret) {
-            printf("get_router_address failed, ret: %d\n", ret);
-            return;
-        }
-        req_files[i] = qemu_rdma_build_outcoming_file(&addr);
-        printf("QEMU %d connect to %d %s:%s success\n", local_index, i, addr.host, addr.port);
-        printf("req_files[%d] connect to %s:%s success\n", i, addr.host, addr.port);
-
-        ret = get_rdma_router_address(i, RDMA_LISTEN_REVERSE, &addr);
-        if (ret) {
-            printf("get_router_address failed, ret: %d\n", ret);
-            return;
-        }
-        listen_req_files[i] = qemu_rdma_build_outcoming_file(&addr);
-        printf("QEMU %d connect to QEMU %d %s:%s success\n", local_index, i, addr.host, addr.port);
-    }
-
-    bool *done_list = (bool *)g_malloc0(ms->qemu_nums * sizeof(bool));
-
-    while (done < ms->qemu_nums - 1) {
-        for (i = 0; i < ms->qemu_nums; i++) {
-            if (rsp_files[i] && !done_list[i]) {
-                done_list[i] = true;
-                done++;
-                printf("connect io router %d done\n", i);
-            }
-        }
-    }
-    free(done_list);
-}
-
-#else /* ROUTER_CONNECTION_RDMA */
-
-#ifdef ROUTER_CONNECTION_TCP
 static int get_router_address(int target, struct router_address *addr)
 {
     if (addr == NULL) {
@@ -533,8 +374,6 @@ static int get_router_address(int target, struct router_address *addr)
     addr->target = target;
     return 0;
 }
-#endif
-
 static gboolean io_router_accept_connection(QIOChannel *ioc,
                                                  GIOCondition condition,
                                                  gpointer user_data)
@@ -576,17 +415,6 @@ static void connect_io_router_single(int index)
 
     connect_addr = g_new0(SocketAddress, 1);
 
-#ifdef ROUTER_CONNECTION_UNIX_SOCKET
-    char sockpath[30];
-    sprintf(sockpath, "%s-%d", ROUTER_SOCKET_PREFIX, index);
-
-    connect_addr->type = SOCKET_ADDRESS_KIND_UNIX;
-    connect_addr->u.q_unix.data = g_new0(UnixSocketAddress, 1);
-    connect_addr->u.q_unix.data->path = g_strdup(sockpath);
-    printf("connect socket_path: %s\n", sockpath);
-#endif
-
-#ifdef ROUTER_CONNECTION_TCP
     int ret;
     struct router_address addr;
     memset(&addr, 0, sizeof(addr));
@@ -604,8 +432,6 @@ static void connect_io_router_single(int index)
         .ipv4 =true,
     };
     printf("connecting %s:%s\n", addr.host, addr.port);
-#endif
-
     channel = QIO_CHANNEL(qio_channel_socket_new());
     qio_channel_set_name(QIO_CHANNEL(channel), "io-send");
 
@@ -624,16 +450,12 @@ static void connect_io_router_single(int index)
     rsp_files[index] = qemu_file_get_return_path(req_files[index]);
     printf("connecting io router done\n");
 }
-#endif /* ROUTER_CONNECTION_RDMA */
 
 static void *qemu_io_router_thread_run(void *arg)
 {
     IORouter *router = arg;
     router->thread_id = qemu_get_thread_id();
 
-#ifdef ROUTER_CONNECTION_RDMA
-    qemu_io_router_thread_run_rdma();
-#else
     int ret;
     SocketAddress *listen_addr;
     QIOChannelSocket *lioc;
@@ -642,18 +464,6 @@ static void *qemu_io_router_thread_run(void *arg)
     MachineState *ms = MACHINE(qdev_get_machine());
     int index = ms->local_cpu_start_index / ms->local_cpus;
 
-#ifdef ROUTER_CONNECTION_UNIX_SOCKET
-    char sockpath[30];
-    sprintf(sockpath, "%s-%d", ROUTER_SOCKET_PREFIX, index);
-
-    listen_addr->type = SOCKET_ADDRESS_KIND_UNIX;
-    listen_addr->u.q_unix.data = g_new0(UnixSocketAddress, 1);
-    listen_addr->u.q_unix.data->path = g_strdup(sockpath);
-
-    printf("QEMU %d listen on Unix socket %s\n", index, sockpath);
-#endif
-
-#ifdef ROUTER_CONNECTION_TCP
     struct router_address addr;
     memset(&addr, 0, sizeof(addr));
 
@@ -670,8 +480,6 @@ static void *qemu_io_router_thread_run(void *arg)
         .ipv4 =true,
     };
     printf("QEMU %d listen on TCP socket %s:%s\n", index, addr.host, addr.port);
-#endif
-
     lioc = qio_channel_socket_new();
     qio_channel_set_name(QIO_CHANNEL(lioc), "io-router-listener-channel");
 
@@ -689,7 +497,6 @@ static void *qemu_io_router_thread_run(void *arg)
                           (GDestroyNotify)object_unref);
 
     qapi_free_SocketAddress(listen_addr);
-#endif
     return NULL;
 }
 
@@ -697,9 +504,6 @@ static void connect_io_router(void)
 {
     printf("connect_io_router...\n");
 
-#ifdef ROUTER_CONNECTION_RDMA
-    connect_io_router_rdma();
-#else
     MachineState *ms = MACHINE(qdev_get_machine());
     int index = ms->local_cpu_start_index / ms->local_cpus;
 
@@ -709,7 +513,6 @@ static void connect_io_router(void)
             connect_io_router_single(i);
         }
     }
-#endif
     printf("connect_io_router done\n");
 
 }
@@ -737,8 +540,6 @@ void disconnect_io_router(void)
     }
     g_free(req_files);
     g_free(rsp_files);
-    g_free(listen_req_files);
-    g_free(listen_rsp_files);
     g_free(router_hosts);
 }
 
@@ -763,8 +564,6 @@ void start_io_router(void)
     size = ms->qemu_nums * sizeof(QEMUFile *);
     req_files = (QEMUFile **)g_malloc0(size);
     rsp_files = (QEMUFile **)g_malloc0(size);
-    listen_req_files = (QEMUFile **)g_malloc0(size);
-    listen_rsp_files = (QEMUFile **)g_malloc0(size);
 
 
     qemu_thread_create(&(router.thread), "io-router-listener", qemu_io_router_thread_run,
