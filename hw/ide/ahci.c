@@ -30,6 +30,7 @@
 #include "qemu/main-loop.h"
 #include "system/block-backend.h"
 #include "system/dma.h"
+#include "system/runstate.h"
 #include "ahci-internal.h"
 #include "ide-internal.h"
 
@@ -761,6 +762,7 @@ static void ahci_write_fis_sdb(AHCIState *s, NCQTransferState *ncq_tfs)
     SDBFIS *sdb_fis;
 
     int ret;
+    bool dsm_pinned = false;
     struct kvm_dsm_mempin pin = {
         .write = true,
         .unpin = false,
@@ -778,8 +780,10 @@ static void ahci_write_fis_sdb(AHCIState *s, NCQTransferState *ncq_tfs)
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
+        dsm_pinned = true;
     }
 
     sdb_fis = (SDBFIS *)&ad->res_fis[RES_FIS_SDBFIS];
@@ -811,13 +815,14 @@ static void ahci_write_fis_sdb(AHCIState *s, NCQTransferState *ncq_tfs)
         ahci_trigger_irq(s, ad, AHCI_PORT_IRQ_BIT_SDBS);
     }
 
-    if (ad->res_fis_is_dsm) {
+    if (dsm_pinned) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
     }
 }
@@ -829,6 +834,7 @@ static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
     IDEState *s = &ad->port.ifs[0];
 
     int ret;
+    bool dsm_pinned = false;
     struct kvm_dsm_mempin pin = {
         .write = true,
         .unpin = false,
@@ -845,8 +851,10 @@ static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
+        dsm_pinned = true;
     }
 
     pio_fis = &ad->res_fis[RES_FIS_PSFIS];
@@ -881,13 +889,14 @@ static void ahci_write_fis_pio(AHCIDevice *ad, uint16_t len, bool pio_fis_i)
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_TFES);
     }
 
-    if (ad->res_fis_is_dsm) {
+    if (dsm_pinned) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
     }
 }
@@ -900,6 +909,7 @@ static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
     IDEState *s = &ad->port.ifs[0];
 
     int ret;
+    bool dsm_pinned = false;
     struct kvm_dsm_mempin pin = {
         .write = true,
         .unpin = false,
@@ -916,8 +926,10 @@ static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return false;
         }
+        dsm_pinned = true;
     }
 
     d2h_fis = &ad->res_fis[RES_FIS_RFIS];
@@ -952,13 +964,14 @@ static bool ahci_write_fis_d2h(AHCIDevice *ad, bool d2h_fis_i)
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_DHRS);
     }
 
-    if (ad->res_fis_is_dsm) {
+    if (dsm_pinned) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return false;
         }
     }
 
@@ -1399,6 +1412,7 @@ static void handle_cmd(AHCIState *s, int port, uint8_t slot)
     dma_addr_t cmd_len;
 
     int ret;
+    bool dsm_pinned = false;
     struct kvm_dsm_mempin pin;
 
     if (s->dev[port].port.ifs[0].status & (BUSY_STAT|DRQ_STAT)) {
@@ -1431,8 +1445,10 @@ static void handle_cmd(AHCIState *s, int port, uint8_t slot)
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
+        dsm_pinned = true;
     }
 
     tbl_addr = le64_to_cpu(cmd->tbl_addr);
@@ -1467,13 +1483,14 @@ out:
                      cmd_len);
 
 done:
-    if (s->dev[port].lst_is_dsm) {
+    if (dsm_pinned) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
     }
     return;
@@ -1493,6 +1510,7 @@ static void ahci_pio_transfer(const IDEDMA *dma)
     bool pio_fis_i;
 
     int ret;
+    bool dsm_pinned = false;
     struct kvm_dsm_mempin pin = {
         .write = true,
         .unpin = false,
@@ -1505,8 +1523,10 @@ static void ahci_pio_transfer(const IDEDMA *dma)
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
+        dsm_pinned = true;
     }
 
     /* The PIO Setup FIS is received prior to transfer, but the interrupt
@@ -1557,13 +1577,14 @@ out:
         ahci_trigger_irq(ad->hba, ad, AHCI_PORT_IRQ_BIT_PSS);
     }
 
-    if (ad->lst_is_dsm) {
+    if (dsm_pinned) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
     }
 }
@@ -1609,6 +1630,7 @@ static int32_t ahci_dma_prepare_buf(const IDEDMA *dma, int32_t limit)
     IDEState *s = &ad->port.ifs[0];
 
     int ret, r;
+    bool dsm_pinned = false;
     struct kvm_dsm_mempin pin = {
         .write = true,
         .unpin = false,
@@ -1621,8 +1643,10 @@ static int32_t ahci_dma_prepare_buf(const IDEDMA *dma, int32_t limit)
         if (r != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          r < 0 ? strerror(-r) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return -1;
         }
+        dsm_pinned = true;
     }
 
     if (ahci_populate_sglist(ad, &s->sg, ad->cur_cmd,
@@ -1637,13 +1661,14 @@ static int32_t ahci_dma_prepare_buf(const IDEDMA *dma, int32_t limit)
 
     ret = s->io_buffer_size;
 done:
-    if (ad->lst_is_dsm) {
+    if (dsm_pinned) {
         pin.unpin = true;
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (r != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          r < 0 ? strerror(-r) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return -1;
         }
     }
     return ret;
@@ -1659,6 +1684,7 @@ static void ahci_commit_buf(const IDEDMA *dma, uint32_t tx_bytes)
     AHCIDevice *ad = DO_UPCAST(AHCIDevice, dma, dma);
 
     int ret;
+    bool dsm_pinned = false;
     struct kvm_dsm_mempin pin = {
         .write = true,
         .unpin = false,
@@ -1671,20 +1697,23 @@ static void ahci_commit_buf(const IDEDMA *dma, uint32_t tx_bytes)
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
+        dsm_pinned = true;
     }
 
     tx_bytes += le32_to_cpu(ad->cur_cmd->status);
     ad->cur_cmd->status = cpu_to_le32(tx_bytes);
 
-    if (ad->lst_is_dsm) {
+    if (dsm_pinned) {
         pin.unpin = true;
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (ret != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          ret < 0 ? strerror(-ret) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return;
         }
     }
 }
@@ -1697,6 +1726,7 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
     int l = s->io_buffer_size - s->io_buffer_index;
 
     int ret, r;
+    bool dsm_pinned = false;
     struct kvm_dsm_mempin pin = {
         .write = true,
         .unpin = false,
@@ -1709,8 +1739,10 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
         if (r != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          r < 0 ? strerror(-r) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return -1;
         }
+        dsm_pinned = true;
     }
 
     if (ahci_populate_sglist(ad, &s->sg, ad->cur_cmd, l, s->io_buffer_offset)) {
@@ -1732,13 +1764,14 @@ static int ahci_dma_rw_buf(const IDEDMA *dma, bool is_write)
 
     ret = 1;
 done:
-    if (ad->lst_is_dsm) {
+    if (dsm_pinned) {
         pin.unpin = true;
         r = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
         if (r != 0) {
             error_report("KVM_DSM_MEMPIN failed: %s",
                          r < 0 ? strerror(-r) : "unexpected result");
-            exit(1);
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+            return -1;
         }
     }
     return ret;
@@ -1982,23 +2015,39 @@ static int ahci_state_post_load(void *opaque, int version_id)
                 return -1;
             }
             if (ad->lst_is_dsm) {
+                bool dsm_pinned = false;
                 pin.host_virt_addr = (__u64)ncq_tfs->cmdh;
                 pin.unpin = false;
                 ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-                if (ret < 0) {
-                    fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+                if (ret != 0) {
+                    error_report("KVM_DSM_MEMPIN failed: %s",
+                                 ret < 0 ? strerror(-ret) : "unexpected result");
+                    qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+                    return -1;
                 }
-            }
-            ahci_populate_sglist(ncq_tfs->drive, &ncq_tfs->sglist,
-                                 ncq_tfs->cmdh,
-                                 ncq_tfs->sector_count * BDRV_SECTOR_SIZE,
-                                 0);
-            if (ad->lst_is_dsm) {
-                pin.unpin = true;
-                ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-                if (ret < 0) {
-                    fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
+                dsm_pinned = true;
+
+                ahci_populate_sglist(ncq_tfs->drive, &ncq_tfs->sglist,
+                                     ncq_tfs->cmdh,
+                                     ncq_tfs->sector_count * BDRV_SECTOR_SIZE,
+                                     0);
+
+                if (dsm_pinned) {
+                    pin.unpin = true;
+                    ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+                    if (ret != 0) {
+                        error_report("KVM_DSM_MEMPIN failed: %s",
+                                     ret < 0 ? strerror(-ret) : "unexpected result");
+                        qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+                        return -1;
+                    }
+                    dsm_pinned = false;
                 }
+            } else {
+                ahci_populate_sglist(ncq_tfs->drive, &ncq_tfs->sglist,
+                                     ncq_tfs->cmdh,
+                                     ncq_tfs->sector_count * BDRV_SECTOR_SIZE,
+                                     0);
             }
             if (ncq_tfs->sector_count != ncq_tfs->sglist.size >> 9) {
                 return -1;
