@@ -68,6 +68,7 @@
 #include "system/replay.h"
 
 #include "system/ram_addr.h"
+#include "system/runstate.h"
 
 #include "qemu/pmem.h"
 
@@ -2988,7 +2989,8 @@ static MemTxResult flatview_write_continue_step(MemTxAttrs attrs,
                 if (ret != 0) {
                     error_report("KVM_DSM_MEMCPY write failed: %s",
                                  ret < 0 ? strerror(-ret) : "partial copy");
-                    exit(1);
+                    qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+                    return MEMTX_ERROR;
                 }
             } else {
                 memmove(ram_ptr, buf, *l);
@@ -3104,7 +3106,8 @@ static MemTxResult flatview_read_continue_step(MemTxAttrs attrs, uint8_t *buf,
                 if (ret != 0) {
                     error_report("KVM_DSM_MEMCPY read failed: %s",
                                  ret < 0 ? strerror(-ret) : "partial copy");
-                    exit(1);
+                    qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+                    return MEMTX_ERROR;
                 }
             } else {
                 memcpy(buf, ram_ptr, *l);
@@ -3534,13 +3537,15 @@ void *address_space_map(AddressSpace *as,
             .length = *plen,
         };
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret < 0) {
-            error_report("KVM_DSM_MEMPIN pin failed: %s", strerror(-ret));
+        if (ret != 0) {
+            error_report("KVM_DSM_MEMPIN pin failed: %s",
+                         ret < 0 ? strerror(-ret) : "unexpected result");
             if (is_dsm) {
                 *is_dsm = false;
             }
             memory_region_unref(mr);
             *plen = 0;
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
             return NULL;
         }
     }
@@ -3584,7 +3589,9 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
             if (ret != 0) {
                 error_report("KVM_DSM_MEMPIN unpin failed: %s",
                              ret < 0 ? strerror(-ret) : "unexpected result");
-                exit(1);
+                memory_region_unref(mr);
+                qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
+                return;
             }
         }
         memory_region_unref(mr);
