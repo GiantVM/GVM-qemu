@@ -20,7 +20,6 @@
 #include "interrupt-router.h"
 #include "qom/object_interfaces.h"
 #include "hw/boards.h"
-#include "hw/i386/apic_internal.h"
 
 #define ROUTER_BUFFER_SIZE 1024
 
