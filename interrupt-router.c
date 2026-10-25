@@ -166,8 +166,6 @@ static void *io_router_loop(void *arg)
     int host;
     uint32_t base_index;
     __u64 base_data;
-    CPUState *router_cpu = NULL;
-
     void *data;
     struct io_router_loop_arg *argp = (struct io_router_loop_arg *)arg;
     QEMUFile *req_file = argp->req_file;
@@ -181,10 +179,7 @@ static void *io_router_loop(void *arg)
 
         cpu_index = qemu_get_sbe32(req_file);
         if (cpu_index != CPU_INDEX_ANY) {
-            router_cpu = qemu_get_cpu(cpu_index);
-            /* current_cpu is thread-local and is required by APIC/MMIO
-             * handlers reached from the router thread. */
-            current_cpu = router_cpu;
+            current_cpu = qemu_get_cpu(cpu_index);
         }
         switch(type)
         {
@@ -235,12 +230,24 @@ static void *io_router_loop(void *arg)
                 /* Any CPU broadcast to others */
                 addr = qemu_get_be64(req_file);
                 val = qemu_get_be32(req_file);
-                apic_lapic_write(router_cpu, addr, val);
+                if (!current_cpu) {
+                    error_report("LAPIC router message has no CPU context");
+                    break;
+                }
+                bql_lock();
+                apic_lapic_write(current_cpu, addr, val);
+                bql_unlock();
                 break;
             case SPECIAL_INT:
                 /* Any CPU send to target CPUs of a multicast/broadcast of SMI/NMI/INIT */
                 mask = qemu_get_sbe32(req_file);
-                cpu_interrupt(router_cpu, mask);
+                if (!current_cpu) {
+                    error_report("special interrupt router message has no CPU context");
+                    break;
+                }
+                bql_lock();
+                cpu_interrupt(current_cpu, mask);
+                bql_unlock();
                 break;
             case X2APIC:
                 x2data = qemu_get_be64(req_file);
@@ -276,13 +283,25 @@ static void *io_router_loop(void *arg)
                 break;
             case INIT_LEVEL_DEASSERT:
                 /* Any CPU send to target CPUs of a multicast/broadcast of INIT Level De-assert */
-                apic_init_level_deassert(router_cpu);
+                if (!current_cpu) {
+                    error_report("INIT deassert router message has no CPU context");
+                    break;
+                }
+                bql_lock();
+                apic_init_level_deassert(current_cpu);
+                bql_unlock();
                 break;
             case FIXED_INT:
                 /* Any CPU send to target CPU(s) a lowest-priority/multicast/broadcast interrupt */
                 vector_num = qemu_get_sbe32(req_file);
                 trigger_mode = qemu_get_sbe32(req_file);
-                apic_set_irq_detour(router_cpu, vector_num, trigger_mode);
+                if (!current_cpu) {
+                    error_report("fixed interrupt router message has no CPU context");
+                    break;
+                }
+                bql_lock();
+                apic_set_irq_detour(current_cpu, vector_num, trigger_mode);
+                bql_unlock();
                 break;
             case IOAPIC_INI:
                 val = qemu_get_sbe32(req_file);
@@ -292,7 +311,9 @@ static void *io_router_loop(void *arg)
             case IOAPIC:
                 /* AP forward to BSP */
                 isrv = qemu_get_sbe32(req_file);
+                bql_lock();
                 ioapic_eoi_broadcast(isrv);
+                bql_unlock();
                 break;
 
             case INI_ROUTER:
@@ -606,7 +627,8 @@ void pio_forwarding(uint16_t port, MemTxAttrs attrs, void *data, int direction,
                  * indicate which cpu we are currently operating on, especially
                  * for apic_mem_readl / apic_mem_writel => cpu_get_current_apic
                  */
-                qemu_put_sbe32(io_connect_file, CPU_INDEX_ANY);
+                qemu_put_sbe32(io_connect_file,
+                               current_cpu ? current_cpu->cpu_index : CPU_INDEX_ANY);
                 qemu_put_be16(io_connect_file, port);
                 qemu_put_buffer(io_connect_file, (uint8_t *)&attrs, sizeof(attrs));
                 qemu_put_sbe32(io_connect_file, direction);
