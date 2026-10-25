@@ -28,6 +28,7 @@ void apic_init_level_deassert(CPUState *cpu);
 void apic_lapic_write(CPUState *cpu, hwaddr addr, uint32_t val);
 void apic_set_irq_detour(CPUState *cpu, int vector_num, int trigger_mode);
 void apic_startup(CPUState *cpu, int vector_num);
+uint32_t apic_build_sipi_icr(uint8_t vector);
 
 /* pc.c */
 DeviceState *cpu_get_current_apic(void);

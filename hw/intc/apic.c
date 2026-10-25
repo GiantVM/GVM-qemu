@@ -44,6 +44,11 @@ static APICCommonState **local_apics;
 static uint32_t max_apics;
 static uint32_t max_apic_words;
 
+uint32_t apic_build_sipi_icr(uint8_t vector)
+{
+    return APIC_DM_SIPI << APIC_LVT_DELIV_MOD_SHIFT | vector;
+}
+
 #define TYPE_APIC "apic"
 /*This is reusing the APICCommonState typedef from APIC_COMMON */
 DECLARE_INSTANCE_CHECKER(APICCommonState, APIC,

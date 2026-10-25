@@ -801,7 +801,7 @@ void startup_forwarding(int source_cpu_index, int target_cpu_index,
                         int vector_num)
 {
     icr_forwarding(source_cpu_index, 0x300, /* APIC_ICR */
-                   APIC_DM_SIPI | (vector_num & APIC_VECTOR_MASK),
+                   apic_build_sipi_icr(vector_num),
                    target_cpu_index);
 }
 
