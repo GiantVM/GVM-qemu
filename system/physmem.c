@@ -3537,9 +3537,10 @@ void *address_space_map(AddressSpace *as,
             .length = *plen,
         };
         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-        if (ret != 0) {
+        /* A successful DSM pin may return a positive access mask. */
+        if (ret < 0) {
             error_report("KVM_DSM_MEMPIN pin failed: %s",
-                         ret < 0 ? strerror(-ret) : "unexpected result");
+                         strerror(-ret));
             if (is_dsm) {
                 *is_dsm = false;
             }
@@ -3586,9 +3587,9 @@ void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
                 .length = len,
             };
             ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
-            if (ret != 0) {
+            if (ret < 0) {
                 error_report("KVM_DSM_MEMPIN unpin failed: %s",
-                             ret < 0 ? strerror(-ret) : "unexpected result");
+                             strerror(-ret));
                 memory_region_unref(mr);
                 qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_ERROR);
                 return;
