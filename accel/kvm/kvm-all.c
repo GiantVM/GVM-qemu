@@ -113,6 +113,10 @@ static hwaddr kvm_max_slot_size = ~0;
 
 static int qemu_forward_count = 0;
 
+/* Parsed before accelerator initialization; MachineState's distributed-QEMU
+ * fields are populated later by qemu_init_distributed(). */
+extern int local_cpu_start_index;
+
 static const KVMCapabilityInfo kvm_required_capabilites[] = {
     KVM_CAP_INFO(USER_MEMORY),
     KVM_CAP_INFO(DESTROY_MEMORY_REGION_WORKS),
@@ -2763,6 +2767,23 @@ static int kvm_init(AccelState *as, MachineState *ms)
     s->coalesced_pio = s->coalesced_mmio &&
                        kvm_check_extension(s, KVM_CAP_COALESCED_PIO);
 
+    /*
+     * Device emulation is centralized in QEMU 0 for a distributed VM.
+     * Coalesced I/O bypasses KVM_EXIT_MMIO/KVM_EXIT_IO and is drained by the
+     * local QEMU instance instead, so enabling it on an AP node can apply
+     * device writes to the AP's private device model while reads are
+     * forwarded to QEMU 0.  Besides losing ordering, this splits stateful
+     * register protocols (for example e1000 EECD bit-banging) across two
+     * device models.  Force AP device writes through the forwarding path.
+     */
+    if (local_cpus > 0 && local_cpus != ms->smp.cpus &&
+        local_cpu_start_index != 0) {
+        s->coalesced_mmio = 0;
+        s->coalesced_pio = 0;
+        info_report("distributed AP node starting at CPU %d: disabling "
+                    "KVM coalesced MMIO/PIO", local_cpu_start_index);
+    }
+
     ret = kvm_setup_dirty_ring(s);
     if (ret < 0) {
         goto err;
@@ -2888,7 +2909,28 @@ static void kvm_handle_io(uint16_t port, MemTxAttrs attrs, void *data, int direc
         // AP PIO redirect
         if (ms->local_cpu_start_index != 0)
         {
-            pio_forwarding(port, attrs, data, direction, size, count, false);
+            bool pci_config_write =
+                (port == 0xCF8 || port == 0xCFC || port == 0xCFE) &&
+                direction == KVM_EXIT_IO_OUT;
+
+            if (pci_config_write) {
+                /*
+                 * Every QEMU instance has its own host bridge state.  A PCI
+                 * configuration write issued by an AP must therefore update
+                 * the local instance as well as every peer.  Forwarding only
+                 * to QEMU 0 leaves the AP's PAM/SMRAM state stale.
+                 */
+                for (i = 0; i < count; i++) {
+                    address_space_rw(&address_space_io, port, attrs,
+                                     ptr, size, true);
+                    ptr += size;
+                }
+                pio_forwarding(port, attrs, data, direction, size, count,
+                               true);
+            } else {
+                pio_forwarding(port, attrs, data, direction, size, count,
+                               false);
+            }
             return;
         }
 

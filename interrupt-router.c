@@ -132,8 +132,6 @@ static void kvm_handle_remote_io(uint16_t port, MemTxAttrs attrs, void *data, in
 
 static void *io_router_loop(void *arg)
 {
-    printf("enter router_loop\n");
-    fflush(stdout);
     uint8_t type;
     int cpu_index;
     Error *err = NULL;
@@ -177,9 +175,8 @@ static void *io_router_loop(void *arg)
         }
 
         cpu_index = qemu_get_sbe32(req_file);
-        if (cpu_index != CPU_INDEX_ANY) {
-            current_cpu = qemu_get_cpu(cpu_index);
-        }
+        current_cpu = cpu_index == CPU_INDEX_ANY ? NULL
+                                                  : qemu_get_cpu(cpu_index);
         switch(type)
         {
             case PIO:
@@ -345,7 +342,7 @@ static void *io_router_loop(void *arg)
                         break;
                         }
                     default:
-                        printf("unknown router type[%u]\n", entry->type);
+                        error_report("unknown router type[%u]", entry->type);
                         exit(1);
                     }
                 }
@@ -372,7 +369,7 @@ static void *io_router_loop(void *arg)
                 break;
 
             default:
-                printf("unknown type[%u]\n", type);
+                error_report("unknown router message type[%u]", type);
                 exit(1);
         }
 
@@ -448,7 +445,7 @@ static void connect_io_router_single(int index)
 
     ret = get_router_address(index, &addr);
     if (ret) {
-        printf("get_router_address failed, ret: %d\n", ret);
+        error_report("get_router_address failed: %s", strerror(-ret));
         return;
     }
     connect_addr->type = SOCKET_ADDRESS_TYPE_INET;
@@ -458,7 +455,7 @@ static void connect_io_router_single(int index)
         .has_ipv4 = true,
         .ipv4 =true,
     };
-    printf("connecting %s:%s\n", addr.host, addr.port);
+    info_report("connecting I/O router to %s:%s", addr.host, addr.port);
     channel = QIO_CHANNEL(qio_channel_socket_new());
     qio_channel_set_name(QIO_CHANNEL(channel), "io-send");
 
@@ -475,7 +472,6 @@ static void connect_io_router_single(int index)
     qio_channel_set_delay(channel, false);
     req_files[index] = qemu_file_new_output(channel);
     rsp_files[index] = qemu_file_get_return_path(req_files[index]);
-    printf("connecting io router done\n");
 }
 
 static void *qemu_io_router_thread_run(void *arg)
@@ -496,7 +492,7 @@ static void *qemu_io_router_thread_run(void *arg)
 
     ret = get_router_address(index, &addr);
     if (ret) {
-        printf("get_router_address failed, ret: %d\n", ret);
+        error_report("get_router_address failed: %s", strerror(-ret));
         return NULL;
     }
     listen_addr->type = SOCKET_ADDRESS_TYPE_INET;
@@ -506,12 +502,13 @@ static void *qemu_io_router_thread_run(void *arg)
         .has_ipv4 = true,
         .ipv4 =true,
     };
-    printf("QEMU %d listen on TCP socket %s:%s\n", index, addr.host, addr.port);
+    info_report("QEMU node %d listening for I/O router on %s:%s",
+                index, addr.host, addr.port);
     lioc = qio_channel_socket_new();
     qio_channel_set_name(QIO_CHANNEL(lioc), "io-router-listener-channel");
 
     if (qio_channel_socket_listen_sync(lioc, listen_addr, 1, &local_err) < 0) {
-        printf("io-router listen error, exit...");
+        error_report_err(local_err);
         object_unref(OBJECT(lioc));
         qapi_free_SocketAddress(listen_addr);
         exit(1);
@@ -529,8 +526,6 @@ static void *qemu_io_router_thread_run(void *arg)
 
 static void connect_io_router(void)
 {
-    printf("connect_io_router...\n");
-
     MachineState *ms = MACHINE(qdev_get_machine());
     int index = ms->local_cpu_start_index / ms->local_cpus;
 
@@ -540,8 +535,6 @@ static void connect_io_router(void)
             connect_io_router_single(i);
         }
     }
-    printf("connect_io_router done\n");
-
 }
 
 void disconnect_io_router(void)
@@ -595,6 +588,7 @@ void start_io_router(void)
 
     qemu_thread_create(&(router.thread), "io-router-listener", qemu_io_router_thread_run,
                    &router, QEMU_THREAD_JOINABLE);
+    qemu_thread_join(&router.thread);
 
     connect_io_router();
 }
@@ -874,9 +868,6 @@ void irq_forwarding(int cpu_index, int vector_num, int trigger_mode)
     qemu_mutex_lock(&io_forwarding_mutex);
     MachineState *ms = MACHINE(qdev_get_machine());
     QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
-
-    printf("cpu_index:%d ,vector:%d, trigger:%d\n", cpu_index, vector_num, trigger_mode);
-    fflush(stdout);
 
     qemu_put_be16(io_connect_file, FIXED_INT);
     /* Indicate which CPU we want to forward this interrupt to */
