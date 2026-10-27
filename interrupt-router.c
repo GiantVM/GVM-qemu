@@ -158,6 +158,8 @@ static void *io_router_loop(void *arg)
     int isrv; /* IOAPIC */
 
     uint64_t kvmclock;
+    uint64_t kvm_tsc_offset;
+    uint64_t kvm_tsc_khz;
     __u64 x2data;
 
     int host;
@@ -354,7 +356,10 @@ static void *io_router_loop(void *arg)
 
             case KVMCLOCK:
                 kvmclock = kvmclock_getclock();
+                kvm_tsc_offset = kvmclock_get_tsc_offset(&kvm_tsc_khz);
                 qemu_put_be64(rsp_file, kvmclock);
+                qemu_put_be64(rsp_file, kvm_tsc_offset);
+                qemu_put_be64(rsp_file, kvm_tsc_khz);
                 qemu_fflush(rsp_file);
                 break;
 
@@ -1061,7 +1066,8 @@ void exit_forwarding(void)
     qemu_mutex_unlock(&io_forwarding_mutex);
 }
 
-void kvmclock_fetching(uint64_t *kvmclock)
+void kvmclock_fetching(uint64_t *kvmclock, uint64_t *tsc,
+                       uint64_t *tsc_khz)
 {
     qemu_mutex_lock(&io_forwarding_mutex);
 
@@ -1073,5 +1079,7 @@ void kvmclock_fetching(uint64_t *kvmclock)
     qemu_fflush(io_connect_file);
 
     *kvmclock = qemu_get_be64(io_connect_return_file);
+    *tsc = qemu_get_be64(io_connect_return_file);
+    *tsc_khz = qemu_get_be64(io_connect_return_file);
     qemu_mutex_unlock(&io_forwarding_mutex);
 }

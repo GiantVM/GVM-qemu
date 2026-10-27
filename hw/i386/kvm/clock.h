@@ -14,7 +14,7 @@
 #define HW_I386_KVM_CLOCK_H
 
 void kvmclock_create(bool create_always);
+uint64_t kvmclock_getclock(void);
+uint64_t kvmclock_get_tsc_offset(uint64_t *tsc_khz);
 
 #endif
-
-uint64_t kvmclock_getclock(void);

@@ -3667,6 +3667,30 @@ static int kvm_get_one_msr(X86CPU *cpu, int index, uint64_t *value)
     *value = msr_data.entries[0].data;
     return ret;
 }
+
+static int kvm_tsc_offset_ioctl(CPUState *cpu, uint64_t *offset, bool write)
+{
+    struct kvm_device_attr attr = {
+        .group = KVM_VCPU_TSC_CTRL,
+        .attr = KVM_VCPU_TSC_OFFSET,
+        .addr = (uintptr_t)offset,
+    };
+
+    return kvm_vcpu_ioctl(cpu,
+                          write ? KVM_SET_DEVICE_ATTR : KVM_GET_DEVICE_ATTR,
+                          &attr);
+}
+
+int kvm_read_tsc_offset(CPUState *cpu, uint64_t *offset)
+{
+    return kvm_tsc_offset_ioctl(cpu, offset, false);
+}
+
+int kvm_write_tsc_offset(CPUState *cpu, uint64_t offset)
+{
+    return kvm_tsc_offset_ioctl(cpu, &offset, true);
+}
+
 void kvm_put_apicbase(X86CPU *cpu, uint64_t value)
 {
     int ret;

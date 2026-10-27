@@ -47,7 +47,8 @@ void eoi_forwarding(int isrv);
 void shutdown_forwarding(void);
 void reset_forwarding(void);
 void exit_forwarding(void);
-void kvmclock_fetching(uint64_t *kvmclock);
+void kvmclock_fetching(uint64_t *kvmclock, uint64_t *tsc,
+                       uint64_t *tsc_khz);
 
 void disconnect_io_router(void);
 

@@ -25,12 +25,14 @@
 #include "hw/i386/kvm/clock.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "interrupt-router.h"
 
 #include <linux/kvm.h>
 #include "qom/object.h"
 
 #define TYPE_KVM_CLOCK "kvmclock"
+#define KVMCLOCK_SYNC_SAMPLES 8
 OBJECT_DECLARE_SIMPLE_TYPE(KVMClockState, KVM_CLOCK)
 
 struct KVMClockState {
@@ -163,6 +165,65 @@ static void do_kvmclock_ctrl(CPUState *cpu, run_on_cpu_data data)
 
 extern int local_cpu_start_index;
 
+static uint64_t monotonic_clock_ns(void)
+{
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+
+typedef struct KVMClockTscSync {
+    uint64_t tsc_offset;
+    int ret;
+} KVMClockTscSync;
+
+static void do_kvmclock_set_tsc_offset(CPUState *cpu, run_on_cpu_data data)
+{
+    KVMClockTscSync *sync = data.host_ptr;
+    int ret = kvm_write_tsc_offset(cpu, sync->tsc_offset);
+
+    if (ret < 0 && sync->ret == 0) {
+        sync->ret = ret;
+    }
+}
+
+static void kvmclock_sync_local_tsc_offset(uint64_t tsc_offset,
+                                           uint64_t tsc_khz)
+{
+    KVMClockTscSync sync = {
+        .tsc_offset = tsc_offset,
+    };
+    CPUState *cpu;
+
+    if (!tsc_khz) {
+        error_report("BSP returned a zero TSC frequency");
+        abort();
+    }
+
+    CPU_FOREACH(cpu) {
+        CPUX86State *env = cpu_env(cpu);
+
+        if (cpu->cpu_index < local_cpu_start_index ||
+            cpu->cpu_index >= local_cpu_start_index + local_cpus) {
+            continue;
+        }
+        if (env->tsc_khz != tsc_khz) {
+            error_report("vCPU %d TSC frequency mismatch: local=%" PRIu64
+                         " kHz remote=%" PRIu64 " kHz",
+                         cpu->cpu_index, env->tsc_khz, tsc_khz);
+            abort();
+        }
+        run_on_cpu(cpu, do_kvmclock_set_tsc_offset,
+                   RUN_ON_CPU_HOST_PTR(&sync));
+    }
+    if (sync.ret < 0) {
+        error_report("failed to synchronize local vCPU TSC offset: %s",
+                     strerror(-sync.ret));
+        abort();
+    }
+}
+
 static void kvmclock_vm_state_change(void *opaque, bool running,
                                      RunState state)
 {
@@ -180,7 +241,6 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
          * KVM_GET_CLOCK, read kvmclock value from memory.
          */
         if (!s->clock_is_reliable) {
-            printf("kvmclock_vm_state_change: s->clock_is_reliable is false\n");
             uint64_t pvclock_via_mem = kvmclock_current_nsec(s);
             /* We can't rely on the saved clock value, just discard it */
             if (pvclock_via_mem) {
@@ -194,18 +254,46 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
 
         /* AP should get BSP kvmclock and apply it to its own kvmclock */
         if (local_cpus != smp_cpus && local_cpu_start_index != 0) {
-            struct timespec begin_ts, end_ts;
-            clock_gettime(CLOCK_MONOTONIC, &begin_ts);
-            kvmclock_fetching(&time_clock);
-            clock_gettime(CLOCK_MONOTONIC, &end_ts);
-            uint64_t rtt = (end_ts.tv_sec - begin_ts.tv_sec) * 1000000000 + end_ts.tv_nsec - begin_ts.tv_nsec;
-            printf("kvmclock sync time_clock[%lu] RTT[%lu]\n", time_clock, rtt);
-            time_clock += rtt / 2;
+            uint64_t best_clock = 0;
+            uint64_t best_tsc_offset = 0;
+            uint64_t best_tsc_khz = 0;
+            uint64_t best_midpoint = 0;
+            uint64_t best_rtt = UINT64_MAX;
+            int i;
+
+            for (i = 0; i < KVMCLOCK_SYNC_SAMPLES; i++) {
+                uint64_t begin_ns = monotonic_clock_ns();
+                uint64_t sample_clock;
+                uint64_t sample_tsc_offset;
+                uint64_t sample_tsc_khz;
+                uint64_t end_ns;
+                uint64_t rtt;
+
+                kvmclock_fetching(&sample_clock, &sample_tsc_offset,
+                                  &sample_tsc_khz);
+                end_ns = monotonic_clock_ns();
+                rtt = end_ns - begin_ns;
+
+                if (rtt < best_rtt) {
+                    best_clock = sample_clock;
+                    best_tsc_offset = sample_tsc_offset;
+                    best_tsc_khz = sample_tsc_khz;
+                    best_midpoint = begin_ns + rtt / 2;
+                    best_rtt = rtt;
+                }
+            }
+
+            /*
+             * The remote clock was sampled approximately at the midpoint of
+             * the selected exchange.  Advance that sample to the instant at
+             * which it will be installed instead of reusing an older value.
+             */
+            time_clock = best_clock + monotonic_clock_ns() - best_midpoint;
+            kvmclock_sync_local_tsc_offset(best_tsc_offset,
+                                           best_tsc_khz);
             s->clock = time_clock;
             data.clock = time_clock;
         }
-
-        printf("QEMU %d set kvmclock: %llu\n", local_cpu_start_index, data.clock);
 
         ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, &data);
         if (ret < 0) {
@@ -242,16 +330,32 @@ static void kvmclock_vm_state_change(void *opaque, bool running,
 uint64_t kvmclock_getclock(void) {
     struct kvm_clock_data data;
     int ret;
-    printf("enter kvmclock_getclock\n");
 
     /* kvm_synchronize_all_tsc(); */
 
     ret = kvm_vm_ioctl(kvm_state, KVM_GET_CLOCK, &data);
     if (ret < 0) {
-        fprintf(stderr, "KVM_GET_CLOCK failed: %s\n", strerror(ret));
+        fprintf(stderr, "KVM_GET_CLOCK failed: %s\n", strerror(-ret));
         abort();
     }
     return data.clock;
+}
+
+uint64_t kvmclock_get_tsc_offset(uint64_t *tsc_khz)
+{
+    CPUState *cpu = first_cpu;
+    CPUX86State *env = cpu_env(cpu);
+    uint64_t tsc_offset;
+    int ret;
+
+    ret = kvm_read_tsc_offset(cpu, &tsc_offset);
+    if (ret < 0) {
+        error_report("KVM_GET_DEVICE_ATTR(KVM_VCPU_TSC_OFFSET) failed: %s",
+                     strerror(-ret));
+        abort();
+    }
+    *tsc_khz = env->tsc_khz;
+    return tsc_offset;
 }
 
 static void kvmclock_realize(DeviceState *dev, Error **errp)

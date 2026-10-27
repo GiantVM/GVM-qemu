@@ -55,6 +55,8 @@ bool kvm_is_vm_type_supported(int type);
 bool kvm_has_adjust_clock_stable(void);
 bool kvm_has_exception_payload(void);
 void kvm_synchronize_all_tsc(void);
+int kvm_read_tsc_offset(CPUState *cpu, uint64_t *offset);
+int kvm_write_tsc_offset(CPUState *cpu, uint64_t offset);
 
 void kvm_get_apic_state(DeviceState *d, struct kvm_lapic_state *kapic);
 void kvm_put_apicbase(X86CPU *cpu, uint64_t value);
