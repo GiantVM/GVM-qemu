@@ -748,17 +748,43 @@ void special_interrupt_forwarding(int cpu_index, int mask)
     qemu_mutex_unlock(&io_forwarding_mutex);
 }
 
-static int icr_target_node(uint32_t val, uint32_t dest_id, int local_cpus)
+static bool icr_targets_node(uint32_t val, uint32_t dest_id, int node,
+                             int local_cpus, int qemu_nums)
 {
     uint32_t dest_mode = (val >> 11) & 1;
     uint32_t shorthand = (val >> 18) & 3;
+    int total_cpus = local_cpus * qemu_nums;
 
-    if (dest_mode == 0 && shorthand == 0 &&
-        dest_id != 0xff && dest_id != 0xffffffff) {
-        return dest_id / local_cpus;
+    switch (shorthand) {
+    case 1: /* self: the source node already performed local delivery */
+        return false;
+    case 2: /* all, including self */
+    case 3: /* all, excluding self */
+        return true;
+    default:
+        break;
     }
 
-    return -1;
+    if (dest_mode == 0) {
+        if (dest_id == 0xff || dest_id == 0xffffffff) {
+            return true;
+        }
+        return dest_id / local_cpus == node;
+    }
+
+    /* Linux uses xAPIC flat logical destinations for up to eight CPUs:
+     * CPU n owns bit n in the 8-bit destination mask.  Avoid sending a
+     * local-only IPI through every peer's KVM_DSM_IPI path.  For larger or
+     * clustered configurations, retain the conservative broadcast behavior.
+     */
+    if (total_cpus <= 8 && dest_id <= UINT8_MAX) {
+        uint32_t first_cpu_index = node * local_cpus;
+        uint32_t node_mask = ((1U << local_cpus) - 1) << first_cpu_index;
+
+        return (dest_id & node_mask) != 0;
+    }
+
+    return true;
 }
 
 /* Forward an ICR write.  Non-physical or broadcast destinations may span
@@ -766,14 +792,24 @@ static int icr_target_node(uint32_t val, uint32_t dest_id, int local_cpus)
 void icr_forwarding(int cpu_index, uint32_t reg, uint32_t val,
                     uint32_t dest_id)
 {
-    qemu_mutex_lock(&io_forwarding_mutex);
     MachineState *ms = MACHINE(qdev_get_machine());
     QEMUFile *io_connect_file;
     int source_node = cpu_index / ms->local_cpus;
-    int target_node = icr_target_node(val, dest_id, ms->local_cpus);
+
+    /* The low ICR write carries dest_id and the receiver reconstructs ICR2
+     * before injecting it.  Forwarding the preceding ICR2 write is therefore
+     * redundant and doubles the synchronous router traffic.
+     */
+    if (reg == 0x310) { /* APIC_ICR2 */
+        return;
+    }
+
+    qemu_mutex_lock(&io_forwarding_mutex);
 
     for (int i = 0; i < ms->qemu_nums; i++) {
-        if (i == source_node || (target_node >= 0 && i != target_node)) {
+        if (i == source_node ||
+            !icr_targets_node(val, dest_id, i, ms->local_cpus,
+                              ms->qemu_nums)) {
             continue;
         }
         io_connect_file = req_files[i];
