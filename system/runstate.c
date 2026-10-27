@@ -52,6 +52,7 @@
 #include "qom/object.h"
 #include "qom/object_interfaces.h"
 #include "system/cpus.h"
+#include "system/kvm.h"
 #include "system/qtest.h"
 #include "system/replay.h"
 #include "system/reset.h"
@@ -699,9 +700,6 @@ static inline bool is_main_qemu(void) {
 void qemu_system_reset_request(ShutdownCause reason)
 {
     bool main_qemu = is_main_qemu();
-    if (main_qemu) {
-        reset_forwarding();
-    }
     if (reboot_action == REBOOT_ACTION_SHUTDOWN &&
         reason != SHUTDOWN_CAUSE_SUBSYSTEM_RESET) {
         shutdown_requested = reason;
@@ -712,6 +710,9 @@ void qemu_system_reset_request(ShutdownCause reason)
         reset_requested = reason;
     }
     wakeup_remote_cpu();
+    if (main_qemu) {
+        reset_forwarding();
+    }
     cpu_stop_current();
     qemu_notify_event();
 }
@@ -806,9 +807,6 @@ void qemu_system_shutdown_request_with_code(ShutdownCause reason,
 void qemu_system_shutdown_request(ShutdownCause reason)
 {
     bool main_qemu = is_main_qemu();
-    if (main_qemu) {
-        shutdown_forwarding();
-    }
     trace_qemu_system_shutdown_request(reason);
     replay_shutdown_request(reason);
     shutdown_requested = reason;
@@ -816,6 +814,9 @@ void qemu_system_shutdown_request(ShutdownCause reason)
         force_shutdown = true;
     }
     wakeup_remote_cpu();
+    if (main_qemu) {
+        shutdown_forwarding();
+    }
     qemu_notify_event();
 }
 
@@ -868,6 +869,20 @@ static bool main_loop_should_exit(int *status)
     request = qemu_shutdown_requested();
     if (request) {
         qemu_kill_report();
+        if (request == SHUTDOWN_CAUSE_HOST_SIGNAL) {
+            /*
+             * qemu_system_killed() runs from a signal handler and cannot
+             * wake remote vCPU threads itself.  qemu_shutdown_requested()
+             * has also consumed the request by this point, so publish it
+             * again before waking remote CPUs; they use this flag to leave
+             * their wait loop.
+             */
+            shutdown_requested = request;
+            wakeup_remote_cpu();
+            if (is_main_qemu()) {
+                shutdown_forwarding();
+            }
+        }
         qemu_system_shutdown(request);
         if (shutdown_action == SHUTDOWN_ACTION_PAUSE) {
             vm_stop(RUN_STATE_SHUTDOWN);
@@ -999,6 +1014,16 @@ void qemu_cleanup(int status)
 
     /* stop routers and close connection */ 
     disconnect_io_router();
+
+    /*
+     * Distributed KVM owns an in-kernel DSM TCP server.  Close all vCPU and
+     * VM fds synchronously so a following QEMU pair cannot race the kernel's
+     * DSM listener teardown and fail with EADDRINUSE/ECONNREFUSED.
+     */
+    MachineState *ms = MACHINE(qdev_get_machine());
+    if (kvm_enabled() && ms->local_cpus != ms->smp.cpus) {
+        kvm_close();
+    }
 
     /*
      * We must cancel all block jobs while the block layer is drained,

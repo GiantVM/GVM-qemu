@@ -610,6 +610,12 @@ void cpu_thread_signal_destroyed(CPUState *cpu)
 
 void cpu_pause(CPUState *cpu)
 {
+    if (!cpu->local) {
+        /* Remote CPUs are placeholders and never execute guest code here. */
+        cpu->stop = false;
+        cpu->stopped = true;
+        return;
+    }
     if (qemu_cpu_is_self(cpu)) {
         qemu_cpu_stop(cpu, true);
     } else {
@@ -682,7 +688,15 @@ void cpu_remove_sync(CPUState *cpu)
 {
     cpu->stop = true;
     cpu->unplug = true;
-    qemu_cpu_kick(cpu);
+    if (cpu->local) {
+        qemu_cpu_kick(cpu);
+    } else {
+        /* Wake the placeholder's private wait loop so it can be joined. */
+        qemu_mutex_lock_remote();
+        remote_cpu_wake_generation++;
+        qemu_cond_broadcast_remote();
+        qemu_mutex_unlock_remote();
+    }
     bql_unlock();
     qemu_thread_join(cpu->thread);
     bql_lock();
@@ -965,4 +979,3 @@ void wakeup_remote_cpu(void)
     }
     qemu_mutex_unlock_remote();
 }
-

@@ -60,6 +60,7 @@ static void *kvm_vcpu_thread_fn(void *arg)
     }
     else {
         unsigned int wake_generation = 0;
+        bool shutdown_acked = false;
 
         printf("CPU %d is remote CPU, pause\n", cpu->cpu_index);
         bql_unlock();
@@ -67,15 +68,29 @@ static void *kvm_vcpu_thread_fn(void *arg)
         qemu_mutex_lock_remote();
         while (1) {
             qemu_cond_wait_remote(&wake_generation);
-            if (qemu_shutdown_requested_get()) {
-                cpu->stopped = true;
-                remote_cpu_count_dec();
+            if (cpu->unplug) {
                 break;
+            }
+            if (qemu_shutdown_requested_get()) {
+                /*
+                 * A remote CPU is only a placeholder in this QEMU process.
+                 * Keep its thread parked until process exit instead of
+                 * entering the common vCPU destruction path here.  The main
+                 * thread still has to run vm_shutdown(), whose vmstate list
+                 * includes this vCPU's entry; deleting it during the brief
+                 * BQL hand-off in pause_all_vcpus() can corrupt that walk.
+                */
+                cpu->stopped = true;
+                if (!shutdown_acked) {
+                    remote_cpu_count_dec();
+                    shutdown_acked = true;
+                }
+                continue;
             }
             if (qemu_reset_requested_get()) {
                 cpu->stopped = true;
+                remote_cpu_count_dec();
             }
-            remote_cpu_count_dec();
         }
         qemu_mutex_unlock_remote();
         bql_lock();
