@@ -103,10 +103,14 @@ tar -czf ../gvm-qemu-dsm-v10.1.2.tar.gz \
 
 ## Kernel/QEMU ABI pairing
 
-For TCP DSM, pair this `main` code with GVM-kernel
-[`upstream/7.1-rc3`](https://github.com/GiantVM/GVM-kernel/tree/upstream/7.1-rc3).
-This kernel branch includes the remote AP startup and 4KB DSM mapping fixes;
-the original kernel `main` does not include these fixes.
+For TCP DSM, pair this QEMU code with GVM-kernel
+[`upstream/7.1-rc3-dsm-fixed`](https://github.com/GiantVM/GVM-kernel/tree/upstream/7.1-rc3-dsm-fixed).
+In addition to the remote AP startup and 4KB DSM mapping fixes, this kernel
+branch waits for DSM listener initialization, reports listener failures to
+userspace, supports prompt listener cleanup and restart, avoids busy polling
+in the receive path, separates DSM metadata from MMU SPTE state, and preserves
+dirty tracking for writes outside a running-vCPU context. The original kernel
+`main` and `upstream/7.1-rc3` do not contain the complete fix set.
 Enable both `CONFIG_KVM_DSM_IRQ_FORWARD` and `CONFIG_KVM_DSM` in the host
 kernel. The memory capability is `KVM_CAP_X86_DSM=249`; interrupt exits are
 `KVM_EXIT_DSM_SEND_IRQ=45`, `KVM_EXIT_DSM_X2_ICR=46`, and
@@ -114,7 +118,20 @@ kernel. The memory capability is `KVM_CAP_X86_DSM=249`; interrupt exits are
 the ioctl payload layouts. The QEMU 10.1.2 version string alone does not
 identify this ABI.
 
+## TCP DSM stability notes
 
 For TCP DSM, supply the node addresses with
-`-local-cpu ... iplist=...`. The two nodes must run matching QEMU builds.
-The build command above disables RDMA; this pairing describes TCP DSM.
+`-local-cpu ... iplist=...`. All nodes must run the same QEMU revision and
+use kernels with matching DSM configurations and ABI definitions. The build
+command above disables RDMA; this pairing describes TCP DSM.
+
+This QEMU revision handles positive `KVM_DSM_MEMPIN` access masks correctly,
+waits for distributed router listeners, shuts down remote vCPU placeholders
+and KVM descriptors in a defined order, and keeps AP-side PCI and device state
+coherent. It also filters redundant distributed ICR traffic and improves
+cross-node guest clock alignment.
+
+The clock alignment reduces large TSC jumps observed during distributed guest
+startup, but it does not guarantee that Linux will retain TSC as a stable
+clocksource. A guest may still mark TSC unstable and use `kvm-clock`; that
+fallback is not by itself a DSM/TCP functional failure.
