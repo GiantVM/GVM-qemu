@@ -135,3 +135,19 @@ The clock alignment reduces large TSC jumps observed during distributed guest
 startup, but it does not guarantee that Linux will retain TSC as a stable
 clocksource. A guest may still mark TSC unstable and use `kvm-clock`; that
 fallback is not by itself a DSM/TCP functional failure.
+
+## Current stability baseline
+
+The current TCP DSM baseline is the `upstream/tcp` revision paired with
+`upstream/7.1-rc3-dsm-fixed` above. Its acceptance boundary is functional:
+with two QEMU nodes and two local vCPUs per node, a four-vCPU guest must reach
+a shell with CPUs `0-3` online and without a fatal KVM run error, page-state or
+MMU lifetime failure. Slow startup and a TSC fallback to `kvm-clock` are
+recorded, but are not by themselves reasons to change the DSM protocol or
+clock algorithm.
+
+The baseline deliberately does not include READ owner retention, fast-path
+page-lock redesign, KTCP concurrency changes, or high-frequency diagnostic
+instrumentation. Those are separate follow-up work. Startup timeout or guest
+service adjustments used by a demo must remain reversible and must not hide a
+crash, memory corruption, or unrecoverable deadlock.
