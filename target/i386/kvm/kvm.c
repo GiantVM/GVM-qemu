@@ -6125,8 +6125,6 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     switch (run->exit_reason) {
     case KVM_EXIT_HLT:
         DPRINTF("handle_hlt\n");
-        printf("handle_hlt id %d\n", cs->cpu_index);
-        fflush(stdout);
         bql_lock();
         ret = kvm_handle_halt(cpu);
         bql_unlock();
@@ -6270,7 +6268,6 @@ void kvm_arch_init_irq_routing(KVMState *s)
     kvm_gsi_routing_allowed = true;
 
     if (kvm_irqchip_is_split()) {
-        printf("kvm_arch_init_irq_routing\n");
         KVMRouteChange c = kvm_irqchip_begin_route_changes(s);
         int i;
 

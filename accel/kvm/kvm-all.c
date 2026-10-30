@@ -111,8 +111,6 @@ static uint64_t kvm_supported_memory_attributes;
 static bool kvm_guest_memfd_supported;
 static hwaddr kvm_max_slot_size = ~0;
 
-static int qemu_forward_count = 0;
-
 /* Parsed before accelerator initialization; MachineState's distributed-QEMU
  * fields are populated later by qemu_init_distributed(). */
 extern int local_cpu_start_index;
@@ -3369,7 +3367,6 @@ int kvm_cpu_exec(CPUState *cpu)
             ret = 0;
             break;
         case KVM_EXIT_DSM_SEND_IRQ:
-            qemu_forward_count++;
             icr_forwarding(run->lapic_irq.id, run->lapic_irq.val,
                            run->lapic_irq.val2, run->lapic_irq.dest_id);
             memset(&run->lapic_irq, 0, sizeof(run->lapic_irq));
@@ -3423,7 +3420,6 @@ int kvm_cpu_exec(CPUState *cpu)
             break;
         case KVM_EXIT_SHUTDOWN:
             // qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
-            printf("kvm_exit_shutdown\n");
             cpu_stop_current();
             ret = 0;
             // ret = EXCP_INTERRUPT;
@@ -3462,8 +3458,6 @@ int kvm_cpu_exec(CPUState *cpu)
             trace_kvm_run_exit_system_event(cpu->cpu_index, run->system_event.type);
             switch (run->system_event.type) {
             case KVM_SYSTEM_EVENT_SHUTDOWN:
-                printf("shutdown\n");
-                fflush(stdout);
                 qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
                 ret = EXCP_INTERRUPT;
                 break;
