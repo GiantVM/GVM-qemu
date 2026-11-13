@@ -187,6 +187,11 @@ struct kvm_exit_snp_req_certs {
 #define KVM_EXIT_LOONGARCH_IOCSR  38
 #define KVM_EXIT_MEMORY_FAULT     39
 #define KVM_EXIT_TDX              40
+#define KVM_EXIT_DSM_APIC_BASE    47
+/* Unified forwarding ABI used by GVM-kernel shared-memory/v7.3. */
+#define KVM_EXIT_DSM_IRQ_FORWARD  44
+#define KVM_DSM_IRQ_FORWARD_XAPIC_ICR   1
+#define KVM_DSM_IRQ_FORWARD_X2APIC_ICR  2
 #define KVM_EXIT_ARM_SEA          41
 #define KVM_EXIT_ARM_LDST64B      42
 #define KVM_EXIT_SNP_REQ_CERTS    43
@@ -236,6 +241,22 @@ struct kvm_run {
 	__u64 psw_addr; /* psw lower half */
 #endif
 	union {
+		struct {
+			__u32 vcpu_id;
+			__u32 type;
+			__u32 val;
+			__u32 val2;
+			__u32 dest_id;
+			__u32 pad;
+			__u64 data;
+		} dsm_irq_forward;
+		/* KVM_EXIT_DSM_APIC_BASE */
+		struct {
+			__u32 id;
+			__u8 host;
+			__u32 index;
+			__u64 data;
+		} x2msr_base;
 		/* KVM_EXIT_UNKNOWN */
 		struct {
 			__u64 hardware_exit_reason;
@@ -979,6 +1000,7 @@ struct kvm_enable_cap {
 #define KVM_CAP_ARM_EL2 240
 #define KVM_CAP_ARM_EL2_E2H0 241
 #define KVM_CAP_RISCV_MP_STATE_RESET 242
+#define KVM_CAP_X86_DSM_IRQ_FORWARD 253
 #define KVM_CAP_ARM_CACHEABLE_PFNMAP_SUPPORTED 243
 #define KVM_CAP_GUEST_MEMFD_FLAGS 244
 #define KVM_CAP_ARM_SEA_TO_USER 245
@@ -1338,6 +1360,33 @@ struct kvm_s390_keyop {
 #define KVM_SET_DEVICE_ATTR	  _IOW(KVMIO,  0xe1, struct kvm_device_attr)
 #define KVM_GET_DEVICE_ATTR	  _IOW(KVMIO,  0xe2, struct kvm_device_attr)
 #define KVM_HAS_DEVICE_ATTR	  _IOW(KVMIO,  0xe3, struct kvm_device_attr)
+
+/* Experimental GVM APIC reinjection; requires the matching kernel. */
+struct kvm_dipi_params {
+	int vcpu_id;
+	__u32 val;
+	__u32 val2;
+	__u32 dest_id;
+};
+#define KVM_DSM_IPI               _IOW(KVMIO, 0xf3, struct kvm_dipi_params)
+
+struct kvm_x2apic_params {
+	__u32 vcpu_id;
+	__u32 pad;
+	__u64 data;
+};
+#define KVM_DSM_X2APIC            _IOW(KVMIO, 0xf4, struct kvm_x2apic_params)
+
+
+struct kvm_apic_base_params {
+	__u32 vcpu_id;
+	__u8 host;
+	__u8 pad0[3];
+	__u32 index;
+	__u32 pad1;
+	__u64 data;
+};
+#define KVM_DSM_APIC_BASE         _IOW(KVMIO, 0xf5, struct kvm_apic_base_params)
 
 /*
  * ioctls for vcpu fds
