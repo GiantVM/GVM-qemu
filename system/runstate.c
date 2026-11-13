@@ -54,6 +54,7 @@
 #include "qom/object.h"
 #include "qom/object_interfaces.h"
 #include "system/cpus.h"
+#include "system/kvm.h"
 #include "system/qtest.h"
 #include "system/replay.h"
 #include "system/reset.h"
@@ -65,6 +66,8 @@
 #include "ui/console.h"
 
 #include "trace.h"
+#include "interrupt-router.h"
+#include "system/gvm.h"
 
 static NotifierList exit_notifiers =
     NOTIFIER_LIST_INITIALIZER(exit_notifiers);
@@ -712,8 +715,15 @@ void qemu_system_guest_pvshutdown(void)
     qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
 }
 
+static bool is_main_qemu(void)
+{
+    MachineState *ms = MACHINE(qdev_get_machine());
+    return (gvm_enabled() && ms->local_cpu_start_index == 0);
+}
+
 void qemu_system_reset_request(ShutdownCause reason)
 {
+    bool main_qemu = is_main_qemu();
     if (reboot_action == REBOOT_ACTION_SHUTDOWN &&
         reason != SHUTDOWN_CAUSE_SUBSYSTEM_RESET) {
         shutdown_requested = reason;
@@ -723,6 +733,10 @@ void qemu_system_reset_request(ShutdownCause reason)
         shutdown_requested = reason;
     } else {
         reset_requested = reason;
+    }
+    wakeup_remote_cpu();
+    if (main_qemu) {
+        gvm_router_forward_reset();
     }
     cpu_stop_current();
     qemu_notify_event();
@@ -817,11 +831,16 @@ void qemu_system_shutdown_request_with_code(ShutdownCause reason,
 
 void qemu_system_shutdown_request(ShutdownCause reason)
 {
+    bool main_qemu = is_main_qemu();
     trace_qemu_system_shutdown_request(reason);
     replay_shutdown_request(reason);
     shutdown_requested = reason;
     if (reason == SHUTDOWN_CAUSE_HOST_QMP_QUIT) {
         force_shutdown = true;
+    }
+    wakeup_remote_cpu();
+    if (main_qemu) {
+        gvm_router_forward_shutdown();
     }
     qemu_notify_event();
 }
@@ -875,6 +894,14 @@ static bool main_loop_should_exit(int *status)
     request = qemu_shutdown_requested();
     if (request) {
         qemu_kill_report();
+        if (request == SHUTDOWN_CAUSE_HOST_SIGNAL) {
+            /* Signal handlers cannot take the router or remote-CPU locks. */
+            shutdown_requested = request;
+            wakeup_remote_cpu();
+            if (is_main_qemu()) {
+                gvm_router_forward_shutdown();
+            }
+        }
         qemu_system_shutdown(request);
         if (shutdown_action == SHUTDOWN_ACTION_PAUSE) {
             vm_stop(RUN_STATE_SHUTDOWN);
@@ -1004,6 +1031,9 @@ void qemu_cleanup(int status)
     vm_shutdown();
     replay_finish();
 
+    /* Join router workers before device and memory teardown. */
+    gvm_router_stop();
+
     /*
      * We must cancel all block jobs while the block layer is drained,
      * or cancelling will be affected by throttling and thus may block
@@ -1025,5 +1055,9 @@ void qemu_cleanup(int status)
     qemu_chr_cleanup();
     qemu_display_cleanup();
     user_creatable_cleanup();
+    /* Device/backend cleanup can still inject IRQs or update KVM mappings. */
+    if (kvm_enabled() && gvm_enabled()) {
+        kvm_close();
+    }
     /* TODO: unref root container, check all devices are ok */
 }

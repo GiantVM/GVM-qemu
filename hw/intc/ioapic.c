@@ -37,6 +37,9 @@
 #include "hw/i386/x86-iommu.h"
 #include "trace.h"
 
+#include "interrupt-router.h"
+#include "system/gvm.h"
+
 
 #if defined(CONFIG_KVM) || defined(CONFIG_MSHV)
 #define ACCEL_GSI_IRQFD_POSSIBLE
@@ -101,6 +104,7 @@ static void ioapic_service(IOAPICCommonState *s)
     uint8_t i;
     uint32_t mask;
     uint64_t entry;
+    MachineState *ms = MACHINE(qdev_get_machine());
 
     for (i = 0; i < IOAPIC_NUM_PINS; i++) {
         mask = 1 << i;
@@ -130,8 +134,17 @@ static void ioapic_service(IOAPICCommonState *s)
                     if (info.trig_mode == IOAPIC_TRIGGER_EDGE) {
                         kvm_set_irq(kvm_state, i, 1);
                         kvm_set_irq(kvm_state, i, 0);
+                        if (gvm_enabled() && ms->local_cpu_start_index == 0 &&
+                            gvm_router_is_ready()) {
+                            gvm_router_forward_ioapic_irq(i, 1);
+                            gvm_router_forward_ioapic_irq(i, 0);
+                        }
                     } else {
                         kvm_set_irq(kvm_state, i, 1);
+                        if (gvm_enabled() && ms->local_cpu_start_index == 0 &&
+                            gvm_router_is_ready()) {
+                            gvm_router_forward_ioapic_irq(i, 1);
+                        }
                     }
                     continue;
                 }

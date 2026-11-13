@@ -554,6 +554,17 @@ int kvm_set_memory_attributes_shared(hwaddr start, uint64_t size);
 
 int kvm_convert_memory(hwaddr start, hwaddr size, bool to_private);
 
+#ifdef CONFIG_GVM
+int gvm_kvm_inject_ipi(int cpu_index, uint32_t val, uint32_t val2,
+                       uint32_t dest_id);
+int gvm_kvm_set_ioapic_irq(int irq, int level);
+int gvm_kvm_inject_x2apic(int cpu_index, uint64_t data);
+int gvm_kvm_set_apic_base(int cpu_index, int host, uint32_t index,
+                          uint64_t data);
+struct kvm_irq_routing;
+int gvm_kvm_set_irq_routes(struct kvm_irq_routing *routing);
+#endif
+
 /* argument to vmfd change notifier */
 typedef struct VmfdChangeNotifier {
     int vmfd;

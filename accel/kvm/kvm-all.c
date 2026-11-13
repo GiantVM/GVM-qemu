@@ -55,6 +55,9 @@
 
 #include "hw/core/boards.h"
 #include "system/stats.h"
+#include "hw/core/cpu.h"
+#include "interrupt-router.h"
+#include "system/gvm.h"
 
 /* This check must be after config-host.h is included */
 #ifdef CONFIG_EVENTFD
@@ -107,7 +110,11 @@ bool kvm_pre_fault_memory_supported;
 static bool kvm_immediate_exit;
 static uint64_t kvm_supported_memory_attributes;
 static bool kvm_guest_memfd_supported;
+#ifdef CONFIG_GVM
+static bool kvm_dsm_irq_forward_enabled;
+#endif
 static hwaddr kvm_max_slot_size = ~0;
+
 
 static const KVMCapabilityInfo kvm_required_capabilities[] = {
     KVM_CAP_INFO(USER_MEMORY),
@@ -2208,6 +2215,10 @@ void kvm_irqchip_commit_routes(KVMState *s)
 
     s->irq_routes->flags = 0;
     trace_kvm_irqchip_commit_routes();
+    if (gvm_router_is_ready() &&
+        current_machine->local_cpu_start_index == 0) {
+        gvm_router_forward_irq_routes(s->irq_routes);
+    }
     ret = kvm_vm_ioctl(s, KVM_SET_GSI_ROUTING, s->irq_routes);
     assert(ret == 0);
 }
@@ -3067,6 +3078,27 @@ static int kvm_init(AccelState *as, MachineState *ms)
         goto err;
     }
 
+#ifdef CONFIG_GVM
+    if (gvm_enabled()) {
+        /* The irqchip has not been created yet: inspect its requested mode. */
+        if (!s->kernel_irqchip_allowed ||
+            s->kernel_irqchip_split != ON_OFF_AUTO_ON ||
+            kvm_check_extension(s, KVM_CAP_X86_DSM_IRQ_FORWARD) <= 0) {
+            error_report("GVM requires split irqchip and unified IRQ "
+                         "forwarding support from the matching kernel");
+            ret = -ENOTSUP;
+            goto err;
+        }
+        ret = kvm_vm_enable_cap(s, KVM_CAP_X86_DSM_IRQ_FORWARD, 0);
+        if (ret < 0) {
+            error_report("Cannot enable GVM IRQ forwarding: %s",
+                         strerror(-ret));
+            goto err;
+        }
+        kvm_dsm_irq_forward_enabled = true;
+    }
+#endif
+
     kvm_supported_memory_attributes = kvm_vm_check_extension(s, KVM_CAP_MEMORY_ATTRIBUTES);
     kvm_guest_memfd_supported =
         kvm_vm_check_extension(s, KVM_CAP_GUEST_MEMFD) &&
@@ -3130,11 +3162,66 @@ void kvm_set_sigmask_len(KVMState *s, unsigned int sigmask_len)
     s->sigmask_len = sigmask_len;
 }
 
+static void kvm_flush_remote_coalesced_io(void)
+{
+    struct kvm_coalesced_mmio_ring *ring = kvm_state->coalesced_mmio_ring;
+
+    if (ring && ring->first != ring->last) {
+        /* Serialize the shared ring consumer, as for local MMIO dispatch. */
+        bql_lock();
+        kvm_flush_coalesced_mmio_buffer();
+        bql_unlock();
+    }
+}
+
 static void kvm_handle_io(uint16_t port, MemTxAttrs attrs, void *data, int direction,
                           int size, uint32_t count)
 {
     int i;
     uint8_t *ptr = data;
+
+    MachineState *ms = MACHINE(qdev_get_machine());
+
+    if (gvm_enabled()) {
+        /* Forward AP port accesses to the BSP. */
+        if (ms->local_cpu_start_index != 0) {
+            kvm_flush_remote_coalesced_io();
+            gvm_router_forward_pio(port, attrs, data, direction, size, count,
+                                   false);
+            return;
+        }
+
+        /* Execute locally before broadcasting configuration writes. */
+        for (i = 0; i < count; i++) {
+            address_space_rw(&address_space_io, port, attrs,
+                             ptr, size,
+                             direction == KVM_EXIT_IO_OUT);
+            ptr += size;
+        }
+        /*
+         * BSP special PIO broadcast
+         *  0xCF8: MCH CONFIG_ADDRESS
+         *  0xCFC: MCH CONFIG_DATA
+         *
+         *  These two ports are used to manipulate PCI configurations space.
+         *  The MCH (i.e. North Bridge) has a PCIe Bus and uses it to do
+         *  various settings, including those related to PAM and SMRAM, which
+         *  are important in the boot process. We must forward these IO
+         *  operations so that the AP MCHs are in sync with BSP.
+         *
+         *  126: vapic_write => run_on_cpu
+         *
+         *  The `KVM_EXIT_IO_OUT` means writes to these ports, the "out" here
+         *  means the data flows out from guest (and thus KVM).
+         */
+        if ((port == 0xcf8 || port == 0xcfc ||
+             port == 0xcfe || port == 126) &&
+            direction == KVM_EXIT_IO_OUT) {
+            gvm_router_forward_pio(port, attrs, data, direction, size, count,
+                                   true);
+        }
+        return;
+    }
 
     for (i = 0; i < count; i++) {
         address_space_rw(&address_space_io, port, attrs,
@@ -3171,10 +3258,16 @@ static int kvm_handle_internal_error(CPUState *cpu, struct kvm_run *run)
 void kvm_flush_coalesced_mmio_buffer(void)
 {
     KVMState *s = kvm_state;
+    MachineState *ms;
+    bool remote_io;
 
     if (!s || s->coalesced_flush_in_progress) {
         return;
     }
+
+    ms = MACHINE(qdev_get_machine());
+    remote_io = gvm_enabled() &&
+                ms->local_cpu_start_index != 0;
 
     s->coalesced_flush_in_progress = true;
 
@@ -3189,9 +3282,21 @@ void kvm_flush_coalesced_mmio_buffer(void)
                 warn_report("coalesced MMIO entry has invalid len %u",
                             ent->len);
             } else {
-                as = ent->pio == 1 ? &address_space_io : &address_space_memory;
-                address_space_write(as, ent->phys_addr, MEMTXATTRS_UNSPECIFIED,
-                                    ent->data, ent->len);
+                if (remote_io && ent->pio) {
+                    gvm_router_forward_pio(ent->phys_addr,
+                                           MEMTXATTRS_UNSPECIFIED,
+                                   ent->data, KVM_EXIT_IO_OUT, ent->len, 1,
+                                   false);
+                } else if (remote_io) {
+                    gvm_router_forward_mmio(ent->phys_addr,
+                                            MEMTXATTRS_UNSPECIFIED,
+                                    ent->data, ent->len, true);
+                } else {
+                    as = ent->pio ? &address_space_io : &address_space_memory;
+                    address_space_write(as, ent->phys_addr,
+                                        MEMTXATTRS_UNSPECIFIED,
+                                        ent->data, ent->len);
+                }
             }
 
             smp_wmb();
@@ -3217,7 +3322,6 @@ static void do_kvm_cpu_synchronize_state(CPUState *cpu, run_on_cpu_data arg)
             cpu_dump_state(cpu, stderr, CPU_DUMP_CODE);
             vm_stop(RUN_STATE_INTERNAL_ERROR);
         }
-
         cpu->vcpu_dirty = true;
     }
 }
@@ -3446,6 +3550,7 @@ int kvm_cpu_exec(CPUState *cpu)
 {
     struct kvm_run *run = cpu->kvm_run;
     int ret, run_ret;
+    MachineState *ms = MACHINE(qdev_get_machine());
 
     trace_kvm_cpu_exec();
 
@@ -3525,6 +3630,53 @@ int kvm_cpu_exec(CPUState *cpu)
 
         trace_kvm_run_exit(cpu->cpu_index, run->exit_reason);
         switch (run->exit_reason) {
+#ifdef CONFIG_GVM
+        case KVM_EXIT_DSM_IRQ_FORWARD:
+            if (!kvm_dsm_irq_forward_enabled) {
+                error_report("Unexpected unified DSM IRQ forwarding exit");
+                ret = -1;
+                break;
+            }
+            /* The unified ABI defers both local and remote delivery. */
+            switch (run->dsm_irq_forward.type) {
+            case KVM_DSM_IRQ_FORWARD_XAPIC_ICR:
+                ret = gvm_kvm_inject_ipi(run->dsm_irq_forward.vcpu_id,
+                                         run->dsm_irq_forward.val,
+                                          run->dsm_irq_forward.val2,
+                                          run->dsm_irq_forward.dest_id);
+                if (ret >= 0) {
+                    gvm_router_forward_startup(run->dsm_irq_forward.vcpu_id,
+                                       run->dsm_irq_forward.val,
+                                       run->dsm_irq_forward.val2,
+                                       run->dsm_irq_forward.dest_id);
+                }
+                break;
+            case KVM_DSM_IRQ_FORWARD_X2APIC_ICR:
+                ret = gvm_kvm_inject_x2apic(run->dsm_irq_forward.vcpu_id,
+                                       run->dsm_irq_forward.data);
+                if (ret >= 0) {
+                    gvm_router_forward_x2apic(run->dsm_irq_forward.vcpu_id,
+                                     run->dsm_irq_forward.data);
+                }
+                break;
+            default:
+                error_report("Unknown DSM IRQ forwarding type %u",
+                             run->dsm_irq_forward.type);
+                ret = -1;
+                break;
+            }
+            if (ret < 0) {
+                error_report("DSM IRQ injection failed: %s", strerror(-ret));
+            }
+            break;
+        case KVM_EXIT_DSM_APIC_BASE:
+            gvm_router_forward_apic_base(run->x2msr_base.id,
+                                         run->x2msr_base.host,
+                                         run->x2msr_base.index,
+                                         run->x2msr_base.data);
+            ret = 0;
+            break;
+#endif
         case KVM_EXIT_IO:
             /* Called outside BQL */
             kvm_handle_io(run->io.port, attrs,
@@ -3535,20 +3687,33 @@ int kvm_cpu_exec(CPUState *cpu)
             ret = 0;
             break;
         case KVM_EXIT_MMIO:
-            /* Called outside BQL */
-            address_space_rw(&address_space_memory,
-                             run->mmio.phys_addr, attrs,
-                             run->mmio.data,
-                             run->mmio.len,
-                             run->mmio.is_write);
+            if (gvm_enabled() && ms->local_cpu_start_index != 0) {
+                kvm_flush_remote_coalesced_io();
+                gvm_router_forward_mmio(run->mmio.phys_addr, attrs,
+                                        run->mmio.data,
+                                        run->mmio.len,
+                                        run->mmio.is_write);
+            } else {
+                /* Called outside BQL */
+                address_space_rw(&address_space_memory,
+                                 run->mmio.phys_addr, attrs,
+                                 run->mmio.data,
+                                 run->mmio.len,
+                                 run->mmio.is_write);
+            }
             ret = 0;
             break;
         case KVM_EXIT_IRQ_WINDOW_OPEN:
             ret = EXCP_INTERRUPT;
             break;
         case KVM_EXIT_SHUTDOWN:
-            qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
-            ret = EXCP_INTERRUPT;
+            if (gvm_enabled()) {
+                cpu_stop_current();
+                ret = 0;
+            } else {
+                qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+                ret = EXCP_INTERRUPT;
+            }
             break;
         case KVM_EXIT_UNKNOWN:
             fprintf(stderr, "KVM: unknown exit, hardware reason %" PRIx64 "\n",
@@ -4782,3 +4947,68 @@ int kvm_create_guest_memfd(uint64_t size, uint64_t flags, Error **errp)
 
     return fd;
 }
+#ifdef CONFIG_GVM
+int gvm_kvm_inject_x2apic(int cpu_index, uint64_t data)
+{
+    int fd;
+    struct kvm_x2apic_params x2apic = {
+        .vcpu_id = cpu_index,
+        .data = data,
+    };
+
+    fd = kvm_vm_ioctl(kvm_state, KVM_DSM_X2APIC, &x2apic);
+
+    return fd;
+}
+
+
+int gvm_kvm_inject_ipi(int cpu_index, uint32_t val, uint32_t val2,
+                       uint32_t dest_id)
+{
+    int fd;
+    struct kvm_dipi_params dipi = {
+        .vcpu_id = cpu_index,
+        .val = val,
+        .val2 = val2,
+        .dest_id = dest_id,
+    };
+
+    fd = kvm_vm_ioctl(kvm_state, KVM_DSM_IPI, &dipi);
+
+    return fd;
+}
+
+int gvm_kvm_set_apic_base(int cpu_index, int host, uint32_t index,
+                          uint64_t data)
+{
+    int fd;
+    struct kvm_apic_base_params x2_base = {
+        .vcpu_id = cpu_index,
+        .host = (bool)host,
+        .index = index,
+        .data = data,
+    };
+
+    fd = kvm_vm_ioctl(kvm_state, KVM_DSM_APIC_BASE, &x2_base);
+
+    return fd;
+}
+
+int gvm_kvm_set_ioapic_irq(int irq, int level)
+{
+    int fd;
+
+    fd = kvm_set_irq(kvm_state, irq, level);
+
+    return fd;
+}
+
+int gvm_kvm_set_irq_routes(struct kvm_irq_routing *routing)
+{
+    int fd;
+
+    fd = kvm_vm_ioctl(kvm_state, KVM_SET_GSI_ROUTING, routing);
+
+    return fd;
+}
+#endif

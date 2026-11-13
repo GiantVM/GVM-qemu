@@ -669,7 +669,17 @@ static void vapic_write(void *opaque, hwaddr addr, uint64_t data,
         return;
     }
 
-    cpu_synchronize_state(current_cpu);
+    if (current_cpu->local) {
+        cpu_synchronize_state(current_cpu);
+    } else {
+        CPUState *cs;
+
+        CPU_FOREACH(cs) {
+            if (cs->local) {
+                cpu_synchronize_state(cs);
+            }
+        }
+    }
     cpu = X86_CPU(current_cpu);
     env = &cpu->env;
 

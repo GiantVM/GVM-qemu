@@ -44,3 +44,7 @@ qmp_job_resume(void *job) "job %p"
 qmp_job_complete(void *job) "job %p"
 qmp_job_finalize(void *job) "job %p"
 qmp_job_dismiss(void *job) "job %p"
+
+# GVM control channel
+gvm_router_loop(void) ""
+gvm_router_connected(int node) "node %d"

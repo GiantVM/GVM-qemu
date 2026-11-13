@@ -14,5 +14,6 @@
 #define HW_I386_KVM_CLOCK_H
 
 void kvmclock_create(bool create_always);
+uint64_t gvm_kvm_get_clock(void);
 
 #endif

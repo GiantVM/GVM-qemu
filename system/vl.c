@@ -145,6 +145,7 @@
 #include "qemu/keyval.h"
 #include "memory-internal.h"
 #include "system/gvm.h"
+#include "interrupt-router.h"
 
 #define MAX_VIRTIO_CONSOLES 1
 
@@ -250,7 +251,7 @@ static void gvm_configure(MachineState *ms)
     }
     if (!object_dynamic_cast(OBJECT(ms), "generic-pc-machine") ||
         ms->smp.max_cpus != ms->smp.cpus || ms->memdev ||
-        ms->ram_slots || incoming || preconfig_requested ||
+        ms->ram_slots || ms->cgs || incoming || preconfig_requested ||
         ms->ram_size != ms->maxram_size) {
         error_report("GVM requires a PC with fixed CPUs and RAM; explicit "
                      "memory backends, incoming migration and preconfig "
@@ -2918,6 +2919,8 @@ void qmp_x_exit_preconfig(Error **errp)
         replay_vmstate_init();
     }
 
+    gvm_router_start();
+
     if (incoming) {
         Error *local_err = NULL;
         if (strcmp(incoming, "defer") != 0) {
@@ -3961,6 +3964,11 @@ void qemu_init(int argc, char **argv)
 
     qemu_resolve_machine_memdev();
     parse_numa_opts(current_machine);
+    if (gvm_enabled() && current_machine->numa_state &&
+        current_machine->numa_state->num_nodes) {
+        error_report("NUMA is outside the shared-memory GVM RFC");
+        exit(EXIT_FAILURE);
+    }
 
     if (vmstate_dump_file) {
         /* dump and exit */

@@ -13,6 +13,8 @@
  */
 
 #include "qemu/osdep.h"
+#include "system/gvm.h"
+#include "interrupt-router.h"
 #include "qapi/qapi-events-run-state.h"
 #include "qapi/error.h"
 #include "qapi/visitor.h"
@@ -6585,6 +6587,9 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         break;
     case KVM_EXIT_IOAPIC_EOI:
         ioapic_eoi_broadcast(run->eoi.vector);
+        if (gvm_enabled() && current_machine->local_cpu_start_index != 0) {
+            gvm_router_forward_eoi(run->eoi.vector);
+        }
         ret = 0;
         break;
     case KVM_EXIT_X86_BUS_LOCK:
