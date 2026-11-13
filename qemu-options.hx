@@ -10,6 +10,28 @@ HXCOMM HXCOMM can be used for comments, discarded from both rST and C.
 
 DEFHEADING(Standard options:)
 
+#ifdef CONFIG_GVM
+DEF("local-cpu", HAS_ARG, QEMU_OPTION_local_cpu,
+    "-local-cpu cpus=n,start=n,iplist=\"ip0 ip1\"\n"
+    "                experimental two-node GVM vCPU partition\n",
+    QEMU_ARCH_I386)
+SRST
+``-local-cpu cpus=n,start=n,iplist="ip0 ip1"``
+    Select the local half of a two-node GVM guest. Both processes must use
+    identical guest configurations and different, aligned CPU ranges. This
+    experimental interface requires a matching GVM kernel.
+ERST
+
+DEF("shm-path", HAS_ARG, QEMU_OPTION_shm_path,
+    "-shm-path FILE  shared guest RAM for experimental GVM\n", QEMU_ARCH_I386)
+SRST
+``-shm-path FILE``
+    Map the same guest RAM file in both GVM processes. Requires
+    ``-local-cpu``. Use only trusted peers on the same host.
+ERST
+#endif
+
+
 DEF("help", 0, QEMU_OPTION_h,
     "-h or -help     display this help and exit\n", QEMU_ARCH_ALL)
 SRST

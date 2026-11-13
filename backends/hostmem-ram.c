@@ -12,6 +12,7 @@
 
 #include "qemu/osdep.h"
 #include "system/hostmem.h"
+#include "system/gvm.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "qom/object_interfaces.h"
@@ -31,6 +32,22 @@ ram_backend_memory_alloc(HostMemoryBackend *backend, Error **errp)
     ram_flags = backend->share ? RAM_SHARED : RAM_PRIVATE;
     ram_flags |= backend->reserve ? 0 : RAM_NORESERVE;
     ram_flags |= backend->guest_memfd ? RAM_GUEST_MEMFD : 0;
+#ifdef CONFIG_GVM
+    if (gvm_enabled()) {
+        MachineState *ms = current_machine;
+
+        if (backend->guest_memfd) {
+            error_setg(errp, "GVM does not support guest_memfd");
+            return false;
+        }
+        ram_flags &= ~RAM_PRIVATE;
+        ram_flags |= RAM_SHARED | RAM_NAMED_FILE;
+        return memory_region_init_ram_from_file(&backend->mr, OBJECT(backend),
+                                                name, backend->size, 0,
+                                                ram_flags, ms->shm_path, 0,
+                                                errp);
+    }
+#endif
     return memory_region_init_ram_flags_nomigrate(&backend->mr, OBJECT(backend),
                                                   name, backend->size,
                                                   ram_flags, errp);

@@ -144,6 +144,7 @@
 #include "qemu/guest-random.h"
 #include "qemu/keyval.h"
 #include "memory-internal.h"
+#include "system/gvm.h"
 
 #define MAX_VIRTIO_CONSOLES 1
 
@@ -205,6 +206,90 @@ static int default_cdrom = 1;
 static bool auto_create_sdcard = true;
 static int default_vga = 1;
 static int default_net = 1;
+
+#ifdef CONFIG_GVM
+static QemuOpts *gvm_opts;
+static const char *gvm_shm_path;
+
+static QemuOptsList qemu_local_cpu_opts = {
+    .name = "local-cpu",
+    .implied_opt_name = "cpus",
+    .merge_lists = true,
+    .head = QTAILQ_HEAD_INITIALIZER(qemu_local_cpu_opts.head),
+    .desc = {
+        { .name = "cpus", .type = QEMU_OPT_NUMBER },
+        { .name = "start", .type = QEMU_OPT_NUMBER },
+        { .name = "iplist", .type = QEMU_OPT_STRING },
+        { /* end of list */ }
+    },
+};
+
+/* Called after machine options, before accelerator and RAM initialization. */
+static void gvm_configure(MachineState *ms)
+{
+    uint64_t count, start;
+    g_auto(GStrv) tokens = NULL;
+    const char *iplist;
+    unsigned int nodes = 0;
+    int i;
+
+    if (!gvm_opts) {
+        if (gvm_shm_path) {
+            error_report("-shm-path requires -local-cpu");
+            exit(EXIT_FAILURE);
+        }
+        return;
+    }
+
+    count = qemu_opt_get_number(gvm_opts, "cpus", 0);
+    start = qemu_opt_get_number(gvm_opts, "start", 0);
+    iplist = qemu_opt_get(gvm_opts, "iplist");
+    if (!gvm_shm_path || !*gvm_shm_path || !iplist || !*iplist) {
+        error_report("GVM requires -shm-path and two peer IPv4 addresses");
+        exit(EXIT_FAILURE);
+    }
+    if (!object_dynamic_cast(OBJECT(ms), "generic-pc-machine") ||
+        ms->smp.max_cpus != ms->smp.cpus || ms->memdev ||
+        ms->ram_slots || incoming || preconfig_requested ||
+        ms->ram_size != ms->maxram_size) {
+        error_report("GVM requires a PC with fixed CPUs and RAM; explicit "
+                     "memory backends, incoming migration and preconfig "
+                     "are not supported");
+        exit(EXIT_FAILURE);
+    }
+    if (!count || count > ms->smp.cpus / 2 ||
+        count * 2 != ms->smp.cpus || (start != 0 && start != count)) {
+        error_report("GVM requires two equal, aligned vCPU partitions");
+        exit(EXIT_FAILURE);
+    }
+
+    tokens = g_strsplit_set(iplist, " \t\n\r\v\f", -1);
+    for (i = 0; tokens[i]; i++) {
+        struct in_addr address;
+
+        if (!*tokens[i]) {
+            continue;
+        }
+        if (inet_pton(AF_INET, tokens[i], &address) != 1) {
+            error_report("GVM peer address is not IPv4: %s", tokens[i]);
+            exit(EXIT_FAILURE);
+        }
+        nodes++;
+    }
+    if (nodes != 2) {
+        error_report("GVM requires exactly two peer addresses");
+        exit(EXIT_FAILURE);
+    }
+
+    ms->gvm_enabled = true;
+    ms->shm_path = gvm_shm_path;
+    ms->local_cpus = count;
+    ms->local_cpu_start_index = start;
+    ms->qemu_nums = nodes;
+    ms->cluster_iplist = iplist;
+}
+#endif
+
 
 static const struct {
     const char *driver;
@@ -2892,6 +2977,9 @@ void qemu_init(int argc, char **argv)
     qemu_add_opts(&qemu_semihosting_config_opts);
     qemu_add_opts(&qemu_fw_cfg_opts);
     qemu_add_opts(&qemu_action_opts);
+#ifdef CONFIG_GVM
+    qemu_add_opts(&qemu_local_cpu_opts);
+#endif
     qemu_add_run_with_opts();
     module_call_init(MODULE_INIT_OPTS);
 
@@ -3685,6 +3773,22 @@ void qemu_init(int argc, char **argv)
             case QEMU_OPTION_enable_sync_profile:
                 qsp_enable();
                 break;
+#ifdef CONFIG_GVM
+            case QEMU_OPTION_local_cpu:
+                if (gvm_opts) {
+                    error_report("-local-cpu may only be specified once");
+                    exit(EXIT_FAILURE);
+                }
+                gvm_opts = qemu_opts_parse_noisily(&qemu_local_cpu_opts,
+                                                  optarg, false);
+                if (!gvm_opts) {
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            case QEMU_OPTION_shm_path:
+                gvm_shm_path = optarg;
+                break;
+#endif
             case QEMU_OPTION_nouserconfig:
                 /* Nothing to be parsed here. Especially, do not error out below. */
                 break;
@@ -3797,6 +3901,9 @@ void qemu_init(int argc, char **argv)
     qemu_apply_machine_options(machine_opts_dict);
     qobject_unref(machine_opts_dict);
     phase_advance(PHASE_MACHINE_CREATED);
+#ifdef CONFIG_GVM
+    gvm_configure(current_machine);
+#endif
 
     /*
      * Note: uses machine properties such as kernel-irqchip, must run
@@ -3804,6 +3911,10 @@ void qemu_init(int argc, char **argv)
      */
     configure_accelerators(argv[0]);
     phase_advance(PHASE_ACCEL_CREATED);
+    if (gvm_enabled() && !kvm_enabled()) {
+        error_report("GVM requires the KVM accelerator");
+        exit(EXIT_FAILURE);
+    }
 
     /*
      * Beware, QOM objects created before this point miss global and

@@ -448,6 +448,14 @@ struct MachineState {
     struct NVDIMMState *nvdimms_state;
     struct NumaState *numa_state;
     bool acpi_spcr_enabled;
+
+    /* Experimental GVM: equal-sized vCPU partitions sharing guest RAM. */
+    bool gvm_enabled;
+    const char *shm_path;
+    int local_cpus;
+    int local_cpu_start_index;
+    int qemu_nums;
+    const char *cluster_iplist;
     /*
      * Whether to change virtual machine accelerator handle upon
      * reset or not. Used only for debugging and testing purpose.

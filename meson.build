@@ -2270,6 +2270,16 @@ endif
 
 config_host_data = configuration_data()
 
+if get_option('gvm')
+  if host_os != 'linux' or cpu != 'x86_64' or target_dirs != ['x86_64-softmmu']
+    error('GVM requires a Linux x86_64 host and only x86_64-softmmu')
+  endif
+  if 'CONFIG_KVM' not in accelerators
+    error('GVM requires KVM support')
+  endif
+endif
+config_host_data.set('CONFIG_GVM', get_option('gvm'))
+
 config_host_data.set('CONFIG_HAVE_RUST', have_rust)
 audio_drivers_selected = []
 if have_system
