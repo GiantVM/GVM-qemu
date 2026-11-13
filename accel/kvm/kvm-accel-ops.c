@@ -27,6 +27,7 @@
 
 #include <linux/kvm.h>
 #include "kvm-cpus.h"
+#include "trace.h"
 
 static void *kvm_vcpu_thread_fn(void *arg)
 {
@@ -47,16 +48,41 @@ static void *kvm_vcpu_thread_fn(void *arg)
     cpu_thread_signal_created(cpu);
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
-    do {
-        qemu_process_cpu_events(cpu);
+    /* Deal with local and remote CPUs separately. */
+    if (cpu->local) {
+        do {
+            qemu_process_cpu_events(cpu);
 
-        if (cpu_can_run(cpu)) {
-            r = kvm_cpu_exec(cpu);
-            if (r == EXCP_DEBUG) {
-                cpu_handle_guest_debug(cpu);
+            if (cpu_can_run(cpu)) {
+                r = kvm_cpu_exec(cpu);
+                if (r == EXCP_DEBUG) {
+                    cpu_handle_guest_debug(cpu);
+                }
             }
+        } while (!cpu->unplug || cpu_can_run(cpu));
+    } else {
+        unsigned int wake_generation = 0;
+
+        trace_gvm_kvm_remote_cpu_pause(cpu->cpu_index);
+        bql_unlock();
+        /* Use a separate lock since the BQL may cause a deadlock. */
+        qemu_mutex_lock_remote();
+        while (1) {
+            qemu_cond_wait_remote(&wake_generation);
+            if (cpu->unplug) {
+                break;
+            }
+            /*
+             * Keep the placeholder alive while VM state handlers are walked.
+             * Acknowledge the request token, not the global shutdown/reset
+             * flags, which the main loop may already have consumed.
+             */
+            cpu->stopped = true;
+            remote_cpu_count_dec(wake_generation);
         }
-    } while (!cpu->unplug || cpu_can_run(cpu));
+        qemu_mutex_unlock_remote();
+        bql_lock();
+    }
 
     kvm_destroy_vcpu(cpu);
     cpu_thread_signal_destroyed(cpu);

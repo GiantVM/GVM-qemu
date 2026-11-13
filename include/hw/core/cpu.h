@@ -497,6 +497,9 @@ struct CPUState {
     bool stop;
     bool stopped;
 
+    /* False for a GVM placeholder that does not execute in this process. */
+    bool local;
+
     bool start_powered_off;
 
     bool unplug;

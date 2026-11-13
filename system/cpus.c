@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "system/gvm.h"
 #include "monitor/monitor.h"
 #include "qemu/coroutine-tls.h"
 #include "qapi/error.h"
@@ -75,6 +76,12 @@ static QemuMutex bql;
  * The chosen accelerator is supposed to register this.
  */
 static const AccelOpsClass *cpus_accel;
+
+/* used in wait remote */
+static int wait_remote_cpu_count;
+static unsigned int remote_cpu_wake_generation;
+static unsigned int remote_cpu_request_generation;
+static bool remote_cpu_request_in_progress;
 
 bool cpu_is_stopped(CPUState *cpu)
 {
@@ -426,6 +433,11 @@ static QemuCond qemu_cpu_cond;
 /* system init */
 static QemuCond qemu_pause_cond;
 
+/* mutex and cond for remote cpu */
+static QemuCond qemu_remote_cpu_cond;
+static QemuCond qemu_remote_cpu_ack_cond;
+static QemuMutex qemu_remote_mutex;
+
 void qemu_init_cpu_loop(void)
 {
     qemu_init_sigbus();
@@ -433,11 +445,18 @@ void qemu_init_cpu_loop(void)
     qemu_cond_init(&qemu_pause_cond);
     qemu_mutex_init(&bql);
 
+    qemu_cond_init(&qemu_remote_cpu_cond);
+    qemu_cond_init(&qemu_remote_cpu_ack_cond);
+    qemu_mutex_init(&qemu_remote_mutex);
+
     qemu_thread_get_self(&io_thread);
 }
 
 void run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data)
 {
+    if (!cpu->local) {
+        return;
+    }
     do_run_on_cpu(cpu, func, data, &bql);
 }
 
@@ -613,6 +632,12 @@ void cpu_thread_signal_destroyed(CPUState *cpu)
 
 void cpu_pause(CPUState *cpu)
 {
+    if (!cpu->local) {
+        /* A remote placeholder never executes guest code in this process. */
+        cpu->stop = false;
+        cpu->stopped = true;
+        return;
+    }
     if (qemu_cpu_is_self(cpu)) {
         qemu_cpu_stop(cpu, true);
     } else {
@@ -687,7 +712,16 @@ void cpu_remove_sync(CPUState *cpu)
 {
     cpu->stop = true;
     cpu->unplug = true;
-    cpu_exit(cpu);
+    if (!gvm_enabled()) {
+        cpu_exit(cpu);
+    } else if (cpu->local) {
+        qemu_cpu_kick(cpu);
+    } else {
+        qemu_mutex_lock_remote();
+        remote_cpu_wake_generation++;
+        qemu_cond_broadcast_remote();
+        qemu_mutex_unlock_remote();
+    }
     bql_unlock();
     qemu_thread_join(cpu->thread);
     bql_lock();
@@ -927,5 +961,72 @@ exit:
 void qmp_inject_nmi(Error **errp)
 {
     nmi_monitor_handle(monitor_get_cpu_index(monitor_cur()), errp);
+}
+
+/* Serialize remote placeholder stop acknowledgements by request generation. */
+void qemu_cond_wait_remote(unsigned int *generation)
+{
+    while (*generation == remote_cpu_wake_generation) {
+        qemu_cond_wait(&qemu_remote_cpu_cond, &qemu_remote_mutex);
+    }
+    *generation = remote_cpu_wake_generation;
+}
+
+void qemu_cond_signal_remote(void)
+{
+    qemu_cond_signal(&qemu_remote_cpu_cond);
+}
+
+void qemu_cond_broadcast_remote(void)
+{
+    qemu_cond_broadcast(&qemu_remote_cpu_cond);
+}
+
+void qemu_mutex_lock_remote(void)
+{
+    qemu_mutex_lock(&qemu_remote_mutex);
+}
+
+void qemu_mutex_unlock_remote(void)
+{
+    qemu_mutex_unlock(&qemu_remote_mutex);
+}
+
+void remote_cpu_count_dec(unsigned int generation)
+{
+    /* cpu_remove_sync() also wakes placeholders, without requesting an ack. */
+    if (!remote_cpu_request_in_progress ||
+        generation != remote_cpu_request_generation) {
+        return;
+    }
+    assert(wait_remote_cpu_count > 0);
+    if (--wait_remote_cpu_count == 0) {
+        qemu_cond_broadcast(&qemu_remote_cpu_ack_cond);
+    }
+}
+
+void wakeup_remote_cpu(void)
+{
+    MachineState *ms = MACHINE(qdev_get_machine());
+
+    if (!gvm_enabled()) {
+        return;
+    }
+
+    qemu_mutex_lock_remote();
+    /* Do not overwrite another caller's outstanding acknowledgement count. */
+    while (remote_cpu_request_in_progress) {
+        qemu_cond_wait(&qemu_remote_cpu_ack_cond, &qemu_remote_mutex);
+    }
+    remote_cpu_request_in_progress = true;
+    wait_remote_cpu_count = ms->smp.cpus - ms->local_cpus;
+    remote_cpu_request_generation = ++remote_cpu_wake_generation;
+    qemu_cond_broadcast_remote();
+    while (wait_remote_cpu_count > 0) {
+        qemu_cond_wait(&qemu_remote_cpu_ack_cond, &qemu_remote_mutex);
+    }
+    remote_cpu_request_in_progress = false;
+    qemu_cond_broadcast(&qemu_remote_cpu_ack_cond);
+    qemu_mutex_unlock_remote();
 }
 

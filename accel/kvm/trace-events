@@ -1,5 +1,8 @@
 # See docs/devel/tracing.rst for syntax documentation.
 
+# GVM vCPU partitions
+gvm_kvm_remote_cpu_pause(int cpu) "cpu %d"
+
 # kvm-all.c
 kvm_ioctl(unsigned long type, void *arg) "type 0x%lx, arg %p"
 kvm_vm_ioctl(unsigned long type, void *arg) "type 0x%lx, arg %p"

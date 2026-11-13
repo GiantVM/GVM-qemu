@@ -21,6 +21,7 @@
  * THE SOFTWARE.
  */
 #include "qemu/osdep.h"
+#include "system/gvm.h"
 #include "qemu/error-report.h"
 #include "qemu/cutils.h"
 #include "qemu/units.h"
@@ -436,6 +437,8 @@ void x86_cpu_pre_plug(HotplugHandler *hotplug_dev,
 
     cs = CPU(cpu);
     cs->cpu_index = idx;
+
+    cs->local = gvm_cpu_is_local(idx);
 
     numa_cpu_pre_plug(cpu_slot, dev, errp);
 }

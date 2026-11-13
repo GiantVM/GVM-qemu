@@ -314,6 +314,9 @@ static void cpu_common_initfn(Object *obj)
     /* the default value is changed by qemu_init_vcpu() for system-mode */
     cpu->nr_threads = 1;
 
+    /* CPUs execute locally unless GVM explicitly partitions them. */
+    cpu->local = true;
+
     /* allocate storage for thread info, initialise condition variables */
     cpu->thread = g_new0(QemuThread, 1);
     cpu->halt_cond = g_new0(QemuCond, 1);
